@@ -1,0 +1,34 @@
+{
+  "mode": "simulation",
+  "mqtt_host": "192.168.21.115",
+  "mqtt_port": 1883,
+  "database": "data/zigbee_dev.db",
+  "sensors": [
+    {
+      "id": "TH-02",
+      "topic": "zigbee2mqtt/TH-02",
+      "floor": "1F",
+      "temperature_min": 20,
+      "temperature_max": 28,
+      "humidity_min": 40,
+      "humidity_max": 65,
+      "temperature_jump": 2,
+      "humidity_jump": 10,
+      "jump_minutes": 10,
+      "offline_seconds": 60
+    },
+    {
+      "id": "TH-03",
+      "topic": "zigbee2mqtt/TH-03",
+      "floor": "2F",
+      "temperature_min": 20,
+      "temperature_max": 28,
+      "humidity_min": 40,
+      "humidity_max": 65,
+      "temperature_jump": 2,
+      "humidity_jump": 10,
+      "jump_minutes": 10,
+      "offline_seconds": 60
+    }
+  ]
+}
