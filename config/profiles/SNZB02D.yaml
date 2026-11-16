@@ -44,6 +44,7 @@ points:
   writable: false
   status: confirmed
   validation: {min: 0, max: 100}
+  alarm: {min: 20}
   source: {simulation: false, register_address: 2, register_type: uint16, function_code: 3, scale: 1, block_start: 0, block_length: 4}
 - key: lqi
   display_name: Link quality
