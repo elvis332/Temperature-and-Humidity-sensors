@@ -4,6 +4,9 @@
 
 SNZB-02D -> SLZB-06MU (Ethernet) -> Zigbee2MQTT -> Mosquitto -> read-only MQTT/Modbus TCP bridge -> existing EMS collector.
 
+## Resume after connection interruption
+Start with [commissioning checklist](docs/COMMISSIONING.md), including recorded network/firmware state, exact restart sequence and no production database access. The hardware address must be verified, not guessed.
+
 ## Local isolated test
 Run these from the repo root:
 ```powershell
@@ -16,10 +19,13 @@ py -m bridge.probe
 ```
 Default broker: 127.0.0.1:1883; test topics sander-test/TH-02 and TH-03; Modbus 127.0.0.1:1502. If your broker listens on another address, update bridge/config.test.json and set MQTT_HOST for simulator. Test result expected: -2.5°C, 61.2%RH, 85%, LQI 180; after 15 seconds no fresh report, Modbus exception 0x0b. No SQL access.
 
+The actual EMS source reader/profile and UI patch can be verified without importing EMS services: `py -m bridge.verify_ems "PATH_TO_SanderEMS.zip"`.
+
 ## Files
 - bridge/bridge.py — FC03 read-only server with topic/unit mapping, validation, staleness, retained-message protection.
 - bridge/config.test.json / config.production.example.json — distinct namespaces, timeouts.
 - bridge/zigbee2mqtt.example.yaml — Ethernet coordinator example, last_seen enabled.
+- bridge/preflight.py / verify_ems.py / test_mqtt_integration.py — endpoint checks, source compatibility, real MQTT smoke test.
 - bridge/probe.py / simulate.py / test_bridge.py — independent test tools.
 - config/profiles/SNZB02D.yaml — Modbus registers 0 signed temp ×10, 1 humidity ×10, 2 battery %, 3 LQI.
 - integrations/modbus/ — additive EMS UI patch, five-segment battery icon.
