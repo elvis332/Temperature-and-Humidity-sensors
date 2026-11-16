@@ -27,7 +27,7 @@ def main():
         env = settings.get("environment") or {}
         sensors.append({
             "zigbee": zigbee,
-            "battery_low_pct": env.get("battery_low_pct", 20) if zigbee else None,
+            "battery_low_pct": (alarm_limits(settings_row, ("battery_pct",), profiles).get("battery_pct", {}).get("min", 20)) if zigbee else None,
             "offline_grace_seconds": env.get("offline_grace_seconds", 120) if zigbee else None,''')
     a = replace(a, 'TelemetryReading.point_key.in_(VALUE_KEYS)', 'TelemetryReading.point_key.in_((*VALUE_KEYS, "battery_pct"))')
     a = replace(a, '        sensor["alarms"] = []',
@@ -35,7 +35,7 @@ def main():
         sensor["battery_pct"] = battery[-1][1] if live and battery and sensor["zigbee"] else None
         sensor["alarms"] = []''')
     a = replace(a, '        sensor["attention"] = sensor["status"] in ("offline", "data_error", "no_data") or bool(sensor["alarms"])',
-        '''        low_battery = sensor["zigbee"] and sensor["battery_pct"] is not None and sensor["battery_pct"] <= sensor["battery_low_pct"]
+        '''        low_battery = sensor["zigbee"] and sensor["battery_pct"] is not None and sensor["battery_pct"] <= (sensor["battery_low_pct"] if sensor["battery_low_pct"] is not None else 20)
         sensor["attention"] = sensor["status"] in ("offline", "data_error", "no_data") or bool(sensor["alarms"]) or low_battery''')
     u = replace(u, 'import { useI18n } from "../i18n";', 'import { useI18n } from "../i18n";\nimport BatteryIcon from "./BatteryIcon";')
     u = replace(u, '        <span>{place}</span>', '        <span>{place}</span>\n        {sensor.zigbee && <BatteryIcon value={sensor.battery_pct} threshold={sensor.battery_low_pct} />}')
