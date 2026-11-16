@@ -1,44 +1,34 @@
-# Sander Temperature & Humidity — Zigbee MQTT integration
+# Sander Temperature & Humidity — Modbus bridge baseline (2026-11-16)
 
-**Status: v0.1 development / simulated sensor testing. No SLZB-06M hardware yet.**
+**Active development branch: modbus-bridge.** This specification replaces the earlier direct MQTT/SQL ingestion prototype (src/ and old docs). Do not run that collector, EMS collectors or aggregation locally: the EMS .env connects to production.
 
-This repository adds **SONOFF SNZB-02D → SLZB-06M → Zigbee2MQTT → Mosquitto** to the existing SanderFactoryEMS. The successful WTR10-E/Modbus path remains unchanged.
+SNZB-02D -> SLZB-06MU (Ethernet) -> Zigbee2MQTT -> Mosquitto -> read-only MQTT/Modbus TCP bridge -> existing EMS collector.
 
-## Principles
-- **One EMS:** devices remain `environment_sensor` with point keys `temperature_c`, `humidity_pct`; battery is `battery_pct`.
-- **Separate input adapters:** the existing WTR10-E collector stays intact; Zigbee MQTT has its own collector.
-- **No fake production data:** simulated payloads are marked `_simulated: true`, stored only in a development SQLite database, and blocked from the EMS SQL sink.
-- **Per-sensor policy:** independent temperature/humidity limits, rapid-change thresholds, and loss-of-signal timers.
-- **No automatic actuation:** a future AC control adapter may consume approved alarm events, but no AC commands are implemented or enabled.
-- **Portable:** code in GitHub; broker IP/password, sensor mapping, and production settings stay outside application logic.
-
-## Local test (Windows)
-Python 3.10+ and Mosquitto already installed. Edit `config.json` to match the broker IP (`192.168.21.115` for the current development PC). This is an unauthenticated **temporary** LAN test only.
-
+## Local isolated test
+Run these from the repo root:
 ```powershell
 py -m pip install -r requirements.txt
-py -m src.collector
-# Separate terminal:
-py -m src.simulator
-# After publishing:
-py -m src.status
-py -m unittest discover -s tests -v
+py -m unittest bridge.test_bridge -v
+py -m bridge.bridge
+# separate terminal, while bridge is running
+py -m bridge.simulate
+py -m bridge.probe
 ```
+Default broker: 127.0.0.1:1883; test topics sander-test/TH-02 and TH-03; Modbus 127.0.0.1:1502. If your broker listens on another address, update bridge/config.test.json and set MQTT_HOST for simulator. Test result expected: -2.5°C, 61.2%RH, 85%, LQI 180; after 15 seconds no fresh report, Modbus exception 0x0b. No SQL access.
 
-**Hardware transition:** change `mode` from `simulation` to `live`, stop the simulator, install the SMLIGHT SLZB-06M + Zigbee2MQTT, pair devices, and assign Zigbee2MQTT friendly names matching `config.json` topics. The same payload parsing and alarm rules will be used. Actual end-to-end hardware validation remains required.
+## Files
+- bridge/bridge.py — FC03 read-only server with topic/unit mapping, validation, staleness, retained-message protection.
+- bridge/config.test.json / config.production.example.json — distinct namespaces, timeouts.
+- bridge/zigbee2mqtt.example.yaml — Ethernet coordinator example, last_seen enabled.
+- bridge/probe.py / simulate.py / test_bridge.py — independent test tools.
+- config/profiles/SNZB02D.yaml — Modbus registers 0 signed temp ×10, 1 humidity ×10, 2 battery %, 3 LQI.
+- integrations/modbus/ — additive EMS UI patch, five-segment battery icon.
+- docs/MODBUS_DEPLOYMENT.md — Valen's installation and sensor onboarding guide.
+- docs/RANGE_TEST.md — RF measurement template; no router until measured.
 
-## Project map
-- `src/engine.py`: MQTT payload checks, SQLite historian, persistent alarm transitions
-- `src/collector.py`: Paho MQTT subscription and offline watchdog
-- `src/simulator.py`: synthetic SNZB-02D-like JSON publisher
-- `src/status.py`: CLI for readings and active alerts
-- `src/ems_sink.py`: opt-in live-only adapter to existing EMS `IngestionService`
-- `config.json`: development broker, registered topics, per-sensor settings
-- `integrations/sanderems/config/profiles/SNZB02D.yaml`: model profile for the existing Devices page
-- `docs/ARCHITECTURE.md`: integration contract and planned UI/controls
-- `docs/DEPLOYMENT.md`: move from developer PC to company Git
-
-## EMS source reviewed
-The provided `SanderEMS-main(2).zip` includes `config/profiles/WTR10E.yaml`, `backend/app/telemetry/ingestion.py`, `backend/app/api/routes/environment.py`, and `frontend/src/pages/EnvironmentPage.jsx`. Those files are **not** copied into this repository and are not modified in this stage.
-
-**Release gate:** simulation tests are not proof of a working Zigbee radio, SQL Server integration, or real AC control. Production setup requires authorization, device registration, schema compatibility tests, authenticated MQTT, firewall rules, and alarms tested with real devices.
+## Acceptance
+- No changes to WTR10-E and no local production database access.
+- Hardware, LCD comparison and range survey pending.
+- Confirm approved installation of Zigbee2MQTT; previous Windows Device Guard restricted pnpm.
+- Verify UI in an isolated dev copy, configurable battery threshold and offline timing, LQI on Devices only.
+- Valen performs production deployment as Windows services after approval. Record exact software versions at commissioning.
