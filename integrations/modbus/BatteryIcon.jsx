@@ -1,7 +1,7 @@
 export default function BatteryIcon({ value, threshold = 20 }) {
   const known = Number.isFinite(value) && value >= 0 && value <= 100;
   const segments = known ? Math.ceil(value / 20) : 0;
-  const color = !known ? "#888" : value <= threshold ? "#dc2626" : "currentColor";
+  const color = !known ? "#888" : value <= (threshold ?? 20) ? "#dc2626" : "currentColor";
   const title = known ? `${value}%` : "—";
   return (
     <span title={title} aria-label={`Battery / 電池 ${title}`} style={{display:"inline-flex",alignItems:"center",color}}>
