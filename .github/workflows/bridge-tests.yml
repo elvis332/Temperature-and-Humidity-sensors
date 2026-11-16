@@ -12,3 +12,18 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m unittest bridge.test_bridge -v
+
+  mqtt-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: sudo apt-get update && sudo apt-get install -y mosquitto
+      - run: |
+          sudo systemctl stop mosquitto || true
+          printf 'listener 1883 127.0.0.1\nallow_anonymous true\n' > /tmp/sander-mqtt.conf
+          mosquitto -c /tmp/sander-mqtt.conf -d
+          python -m unittest bridge.test_mqtt_integration -v
