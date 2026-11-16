@@ -1,0 +1,15 @@
+version: 4
+mqtt:
+  server: mqtt://127.0.0.1:1883
+  base_topic: zigbee2mqtt
+serial:
+  port: tcp://COORDINATOR_IP:6638
+  adapter: ember
+advanced:
+  last_seen: ISO_8601
+frontend:
+  enabled: true
+  host: 127.0.0.1
+  port: 8080
+availability:
+  enabled: true
