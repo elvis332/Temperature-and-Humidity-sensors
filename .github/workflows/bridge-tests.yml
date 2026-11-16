@@ -1,7 +1,7 @@
 name: Isolated bridge tests
 on:
   push:
-    branches: [modbus-bridge]
+    branches: [main, modbus-bridge]
   pull_request:
 jobs:
   test:

@@ -1,6 +1,6 @@
 # Sander Temperature & Humidity — Modbus bridge baseline (2026-11-16)
 
-**Active development branch: modbus-bridge.** This specification replaces the earlier direct MQTT/SQL ingestion prototype (src/ and old docs). Do not run that collector, EMS collectors or aggregation locally: the EMS .env connects to production.
+**Active baseline: main — November 16, 2026.** The superseded direct MQTT/SQL prototype is removed from the current source tree. Do not run EMS collectors or aggregation locally: the EMS .env connects to production.
 
 SNZB-02D -> SLZB-06MU (Ethernet) -> Zigbee2MQTT -> Mosquitto -> read-only MQTT/Modbus TCP bridge -> existing EMS collector.
 

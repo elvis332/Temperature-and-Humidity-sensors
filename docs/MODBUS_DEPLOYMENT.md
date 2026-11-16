@@ -1,6 +1,6 @@
 # Valen deployment / development guide (new baseline)
 
-Do not run EMS collectors or aggregation locally. The local EMS .env points to production SQL. The standalone bridge contains no SQL/EMS imports. The old src/collector.py --ems path is superseded; do not use it.
+Do not run EMS collectors or aggregation locally. The local EMS .env points to production SQL. The standalone bridge contains no SQL/EMS imports. The old direct MQTT/SQL ingestion path has been removed from the current source tree.
 
 ## PC testing
 Approved Mosquitto and Python 3.10+ with paho-mqtt 2.x. Use a local-only MQTT listener 127.0.0.1:1883. If the existing broker is bound only to a LAN address, update bridge/config.test.json and set MQTT_HOST in the simulator to that address, or have the approved local listener configured. Keep production broker isolated.
