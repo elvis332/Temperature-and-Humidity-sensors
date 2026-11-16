@@ -59,6 +59,8 @@ class Cache:
         now = time.time()
         stamp = obj.get("last_seen")
         if stamp:
+            if not isinstance(stamp, str):
+                raise ValueError("last_seen must be ISO 8601 text")
             dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
             if dt.tzinfo is None:
                 raise ValueError("last_seen must include timezone")
