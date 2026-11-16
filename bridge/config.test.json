@@ -1,0 +1,19 @@
+{
+  "mqtt_host": "127.0.0.1",
+  "mqtt_port": 1883,
+  "client_id": "sander-bridge-test",
+  "modbus_host": "127.0.0.1",
+  "modbus_port": 1502,
+  "sensors": [
+    {
+      "unit_id": 1,
+      "topic": "sander-test/TH-02",
+      "offline_seconds": 15
+    },
+    {
+      "unit_id": 2,
+      "topic": "sander-test/TH-03",
+      "offline_seconds": 15
+    }
+  ]
+}
