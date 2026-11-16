@@ -1,0 +1,15 @@
+<!-- WinSW template. Valen must adjust paths, use an approved service account and provide MQTT credentials securely. -->
+<service>
+  <id>SanderZigbeeBridge</id>
+  <name>Sander Zigbee Modbus Bridge</name>
+  <description>Read-only MQTT to Modbus TCP bridge for environmental sensors.</description>
+  <executable>C:\Sander\ZigbeeBridge\.venv\Scripts\python.exe</executable>
+  <arguments>-m bridge.bridge</arguments>
+  <workingdirectory>C:\Sander\ZigbeeBridge</workingdirectory>
+  <env name="BRIDGE_CONFIG" value="C:\Sander\Config\zigbee-bridge.json"/>
+  <depend>mosquitto</depend>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+  <logpath>C:\Sander\Logs\ZigbeeBridge</logpath>
+  <log mode="roll"/>
+</service>
