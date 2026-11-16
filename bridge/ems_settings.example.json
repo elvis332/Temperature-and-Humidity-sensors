@@ -1,0 +1,20 @@
+{
+  "profile_id": "SNZB02D",
+  "device": {
+    "id": "TH-02",
+    "display_name": "Zigbee TH-02"
+  },
+  "communication": {
+    "mode": "modbus_tcp",
+    "ip_address": "127.0.0.1",
+    "port": 1502,
+    "modbus_unit_id": 1
+  },
+  "collection": {
+    "sampling_seconds": 60
+  },
+  "environment": {
+    "battery_low_pct": 20,
+    "offline_grace_seconds": 120
+  }
+}
