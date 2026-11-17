@@ -4,7 +4,7 @@
 
 Live pilot verified 2026-11-17: SONOFF SNZB-02D (TH-02) -> SLZB-06MU Ethernet coordinator (192.168.50.20:6638, firmware 7.3.1.0 EZSP v12) -> Zigbee2MQTT 2.14.3 (legacy ezsp) -> local Mosquitto -> read-only Modbus bridge (127.0.0.1:1502 Unit 1). Fresh measurements (27.3 C, 57.6%RH, battery 100%, LQI 255) reached the actual EMS Modbus source reader. Automatic sensor rejoin occurred once after power restoration; production endurance remains unverified.
 
-**Begin with [Valen's production PR review and acceptance instructions](docs/VALEN_PRODUCTION_PR.md).**
+**Begin with [Valen's production PR review and acceptance instructions](docs/VALEN_PRODUCTION_PR.md).** For the failed developer-PC watchdog task (Ready, exit result 1), see [local task diagnosis and guarded repair](docs/WATCHDOG_RECOVERY.md).
 
 ## Key files
 - bridge/bridge.py and bridge/config.production.example.json — read-only MQTT-to-Modbus bridge with 900-second provisional freshness cutoff, rejects stale/replayed reports.
