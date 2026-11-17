@@ -166,12 +166,18 @@ def supervise(config, once=False):
     heartbeat = {"connected": False, "started": time.monotonic(), "last": None}
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                          client_id=config.get("client_id", "sander-production-recovery-monitor"))
-    user = __import__("os").environ.get("MQTT_USER")
-    if user:
-        password = __import__("os").environ.get("MQTT_PASSWORD")
-        if password is None:
-            raise RuntimeError("MQTT_USER is set but MQTT_PASSWORD is missing")
-        client.username_pw_set(user, password)
+    if config.get("mqtt_auth_file"):
+        auth = json.loads(Path(config["mqtt_auth_file"]).read_text(encoding="utf-8"))
+        if not auth.get("username") or not auth.get("password"):
+            raise ValueError("MQTT credentials file requires username and password")
+        client.username_pw_set(auth["username"], auth["password"])
+    else:
+        user = __import__("os").environ.get("MQTT_USER")
+        if user:
+            password = __import__("os").environ.get("MQTT_PASSWORD")
+            if password is None:
+                raise RuntimeError("MQTT_USER is set but MQTT_PASSWORD is missing")
+            client.username_pw_set(user, password)
     if config.get("mqtt_tls"):
         client.tls_set(ca_certs=config.get("mqtt_ca"))
 
