@@ -6,7 +6,7 @@ Start with [Valen production guide](../docs/VALEN_PRODUCTION_PR.md). These are t
 - zigbee2mqtt-service.xml: WinSW automatic process lifecycle for the validated Zigbee2MQTT version and preserved data.
 - bridge-service.xml: read-only MQTT/Modbus bridge, dependent on Mosquitto.
 - zigbee2mqtt.production-settings.example.yaml: compatible EZSP v12 settings excerpt only; never overwrite existing paired configuration.
-- recovery_supervisor.py: conservative Windows service monitor (15-second checks; 4 repeated unhealthy checks, 5-minute restart cooldown), records TH-02 freshness without attempting re-pairing.
+- recovery_supervisor.py: conservative Windows service monitor (15-second checks; 4 repeated unhealthy checks, 5-minute restart cooldown), records TH-02 freshness and a 30-minute Zigbee2MQTT bridge/health heartbeat without attempting re-pairing.
 - recovery.example.json: private deployment config template; production address pending IT approval.
 - Install-SanderWatchdogTask.ps1: guarded boot-time Scheduled Task under SYSTEM, independent of login. Dry run by default; use -Apply only with IT approval. Writes rotating audit logs.
 - test_recovery_supervisor.py and test_contract.py: unit/contract tests.
