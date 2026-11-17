@@ -42,7 +42,10 @@ $principalCheck = New-Object Security.Principal.WindowsPrincipal($id)
 if (-not $principalCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw "Apply requires an approved elevated IT PowerShell session."
 }
-$arguments = '-u -m deploy.recovery_supervisor --config "' + $config + '"'
+$logFile = Join-Path $Root "Logs\ZigbeeRecovery\supervisor.log"
+$logDir = Split-Path $logFile -Parent
+New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+$arguments = '-u -m deploy.recovery_supervisor --config "' + $config + '" --log-file "' + $logFile + '"'
 $action = New-ScheduledTaskAction -Execute $python -Argument $arguments -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
