@@ -17,5 +17,6 @@
       "topic": "zigbee2mqtt/TH-02",
       "offline_seconds": 900
     }
-  ]
+  ],
+  "z2m_health_timeout_seconds": 1800
 }
