@@ -10,6 +10,7 @@ Live pilot verified 2026-11-17: SONOFF SNZB-02D (TH-02) -> SLZB-06MU Ethernet co
 - bridge/bridge.py and bridge/config.production.example.json — read-only MQTT-to-Modbus bridge with 900-second provisional freshness cutoff, rejects stale/replayed reports.
 - config/profiles/SNZB02D.yaml — four-register EMS profile for temperature, humidity, battery and LQI.
 - integrations/modbus/apply_ui.py and BatteryIcon.jsx — additive EMS Environment integration, battery warning icon. Apply only on a disposable EMS staging checkout after reviewing anchors.
+- integrations/modbus/validate_ems_staging.py — source-only staging contract checker for Valen; makes no database or collector calls.
 - deploy/zigbee2mqtt-service.xml and bridge-service.xml — IT-approved WinSW service templates; auto-start on reboot.
 - deploy/recovery_supervisor.py — supervises only approved Windows service names; observes sensor freshness, never resets/re-pairs devices.
 - deploy/Install-SanderWatchdogTask.ps1 — boot-time SYSTEM Scheduled Task installer; dry-run by default and only acts with explicit -Apply.
