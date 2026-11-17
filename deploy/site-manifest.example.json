@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "site_id": "Sander-Yilan",
+  "gateways": [
+    {
+      "id": "GW01",
+      "coordinator_host": "192.168.35.11",
+      "coordinator_port": 6638,
+      "mqtt_base_topic": "zigbee2mqtt",
+      "z2m_ui_port": 8080,
+      "modbus_port": 1502
+    }
+  ],
+  "sensors": [
+    {
+      "device_id": "TH-02",
+      "ieee_address": "0xb0e8e8fffef4f4de",
+      "friendly_name": "TH-02",
+      "gateway_id": "GW01",
+      "unit_id": 1,
+      "location": "COMMISSIONING_BENCH_UPDATE_BEFORE_EMS_IMPORT",
+      "offline_seconds": 900
+    }
+  ]
+}
