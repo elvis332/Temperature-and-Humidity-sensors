@@ -131,6 +131,12 @@ try {
             if (Test-Path $target) { throw "Refusing to overwrite existing config: $target" }
             Copy-Item -LiteralPath (Join-Path $staged $basename) -Destination $target -ErrorAction Stop
         }
+        foreach ($kind in @("Zigbee2MQTT","Bridge")) {
+            $logPath=Join-Path $Root ("Logs\" + $gid + "\" + $kind)
+            New-Item -ItemType Directory -Force -Path $logPath | Out-Null
+            & icacls.exe $logPath /grant '*S-1-5-19:(OI)(CI)M' | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Unable to grant LocalService log write access: $logPath" }
+        }
         foreach ($service in @("SanderZ2M" + $gid,"SanderBridge" + $gid)) {
             $xml=Join-Path $servicesDir ($service+".xml")
             $exe=Join-Path $servicesDir ($service+".exe")
@@ -147,9 +153,9 @@ try {
         }
         $task="Sander-Zigbee-Recovery-" + $gid
         $cfg=Join-Path $Root ("Config\recovery." + $gid + ".json")
+        $tasks.Add($task)
         & (Join-Path $repo "deploy\Install-SanderWatchdogTask.ps1") -Root $Root -ConfigPath $cfg -TaskName $task -Apply
         if (-not (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue)) { throw "Recovery task not registered: $task" }
-        $tasks.Add($task)
     }
     Write-Host "SERVER INSTALL COMPLETED. Sensor pairing/EMS import is NOT performed automatically."
     Write-Host "Review generated EMS registration CSV: $(Join-Path $staged 'ems-device-registration-review.csv')"
