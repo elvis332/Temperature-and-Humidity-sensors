@@ -12,7 +12,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - run: python -m unittest bridge.test_bridge deploy.test_recovery_supervisor deploy.test_contract integrations.modbus.test_validate_ems_staging -v
+      - run: python -m unittest bridge.test_bridge deploy.test_recovery_supervisor deploy.test_contract deploy.test_site_registry integrations.modbus.test_validate_ems_staging -v
       - name: Validate PowerShell installer syntax
         shell: pwsh
         run: |
@@ -22,7 +22,8 @@ jobs:
             'deploy/Install-SanderWatchdogTask.ps1',
             'deploy/Local-PC-ZigbeeWatchdog.ps1',
             'deploy/Install-LocalWatchdog.ps1',
-            'deploy/Diagnose-LocalWatchdog.ps1'
+            'deploy/Diagnose-LocalWatchdog.ps1',
+            'deploy/Install-SanderServer.ps1'
           )) {
             $tokens = $null
             $errors = $null
