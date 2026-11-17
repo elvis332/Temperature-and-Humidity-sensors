@@ -41,6 +41,10 @@ def load_config(path):
                          ("restart_cooldown_seconds", 60)):
         if not isinstance(config[key], int) or config[key] < minimum:
             raise ValueError(f"Invalid {key}")
+    if "client_id" in config and (not isinstance(config["client_id"], str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", config["client_id"])):
+        raise ValueError("Invalid MQTT client id")
+    if "bridge_health_topic" in config and not isinstance(config["bridge_health_topic"], str):
+        raise ValueError("Invalid health topic")
     topics = [item["topic"] for item in config["sensors"]]
     if len(topics) != len(set(topics)):
         raise ValueError("Duplicate sensor topic")
@@ -161,7 +165,7 @@ def supervise(config, once=False):
     freshness = Freshness(config["sensors"])
     heartbeat = {"connected": False, "started": time.monotonic(), "last": None}
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
-                         client_id="sander-production-recovery-monitor")
+                         client_id=config.get("client_id", "sander-production-recovery-monitor"))
     user = __import__("os").environ.get("MQTT_USER")
     if user:
         password = __import__("os").environ.get("MQTT_PASSWORD")
@@ -177,7 +181,7 @@ def supervise(config, once=False):
             heartbeat["started"] = time.monotonic()
             heartbeat["last"] = None
             subscriptions = [(topic, 1) for topic in freshness.timeouts]
-            subscriptions.append(("zigbee2mqtt/bridge/health", 0))
+            subscriptions.append((config.get("bridge_health_topic", "zigbee2mqtt/bridge/health"), 0))
             c.subscribe(subscriptions)
             LOG.info("MQTT observer connected; waiting for fresh Zigbee2MQTT health")
         else:
@@ -188,7 +192,7 @@ def supervise(config, once=False):
         LOG.warning("MQTT observer disconnected: %s", reason)
 
     def on_message(c, userdata, message):
-        if message.topic == "zigbee2mqtt/bridge/health":
+        if message.topic == config.get("bridge_health_topic", "zigbee2mqtt/bridge/health"):
             if not message.retain:
                 try:
                     health = json.loads(message.payload)
