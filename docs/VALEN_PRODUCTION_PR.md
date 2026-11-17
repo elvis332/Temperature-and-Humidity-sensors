@@ -18,6 +18,8 @@ This repository contains the bridge and an EMS integration patch, **not** the fu
 6. With all services co-located, bind Modbus to 127.0.0.1 only. Keep port 8080 frontend loopback; remote management via approved reverse proxy/tunnel if required.
 
 ## 2. Install production software (Valen only)
+
+**Updated server staging path:** Prefer the preflight and one-click, approval-gated installer described in [ONE_CLICK_SERVER_INSTALL.md](ONE_CLICK_SERVER_INSTALL.md). It generates per-gateway WinSW service XMLs and recovery tasks from a validated site manifest, rather than requiring manual config editing for every sensor. It outputs an EMS device-registration REVIEW CSV only; no SQL device insertion occurs. The older single-gateway XML files below remain illustrative templates.
 Directory model (paths in service XML must be adjusted if IT chooses alternatives):
 - C:\Sander\zigbee2mqtt : approved built Zigbee2MQTT runtime and preserved data path C:\Sander\Config\zigbee2mqtt
 - C:\Sander\ZigbeeBridge : checkout of this repository plus .venv, requirements.txt installed
