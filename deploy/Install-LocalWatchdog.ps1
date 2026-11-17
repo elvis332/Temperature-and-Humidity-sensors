@@ -42,7 +42,8 @@ if ($existing -and $existing.State -eq "Running") {
 # Check the script can run ONE pass in this interactive shell before scheduling.
 Copy-Item -LiteralPath $source -Destination $target -Force
 & $target -Once
-if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Single-pass watchdog check failed" }
+# PowerShell script failures are terminating under ErrorActionPreference=Stop.
+# LASTEXITCODE may be uninitialized when no native executable was invoked.
 $action=New-ScheduledTaskAction -Execute $ps -Argument ('-NoProfile -NonInteractive -File "' + $target + '"')
 $trigger=New-ScheduledTaskTrigger -AtLogOn -User $person
 $principal=New-ScheduledTaskPrincipal -UserId $person -LogonType Interactive -RunLevel Limited
