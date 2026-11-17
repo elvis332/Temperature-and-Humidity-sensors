@@ -72,6 +72,9 @@ The developer-PC-only preview (port 5175) uses an isolated API and volatile hist
 
 Rollback: stop supervisor Scheduled Task, stop the new WinSW services and restore approved pre-cutover Zigbee2MQTT data backup and coordinator IP only via IT change procedure. Revert the EMS integration commit in its own application repo if needed. Do not delete/re-pair sensors as part of rollback and do not touch wired telemetry.
 
+## Local watchdog issue (developer PC only)
+On 2026-11-17 the old per-login development Scheduled Task was Ready with LastTaskResult 1 and no active watcher process/log. This is **not** proof of working automation. Its cause is not established without Task Scheduler Operational events. We added read-only diagnostics and a guarded local repair workflow; see [WATCHDOG_RECOVERY.md](WATCHDOG_RECOVERY.md). Keep the old dev task entirely separate from the boot-time SYSTEM production supervisor; IT must confirm the latter works in its server environment.
+
 ## Explicit review blockers
 - Actual EMS repository/branch and its target SQL Server staging environment are not connected here. Valen must test/approve integration in that repository separately.
 - Server address 192.168.35.11, service credentials, broker ACL, full reboot behavior, and production 24+ hour endurance remain unverified.
