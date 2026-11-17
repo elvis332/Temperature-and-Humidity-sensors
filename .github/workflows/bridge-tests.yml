@@ -11,7 +11,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m unittest bridge.test_bridge -v
+      - run: pip install -r requirements.txt
+      - run: python -m unittest bridge.test_bridge deploy.test_recovery_supervisor deploy.test_contract -v
+      - name: Validate PowerShell installer syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path deploy/Install-SanderWatchdogTask.ps1), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+      - run: python -m py_compile bridge/bridge.py integrations/modbus/apply_ui.py deploy/recovery_supervisor.py
 
   mqtt-integration:
     runs-on: ubuntu-latest
