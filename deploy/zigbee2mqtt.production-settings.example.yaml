@@ -1,0 +1,24 @@
+# REVIEW-ONLY EXCERPT, NOT A REPLACEMENT FOR configuration.yaml.
+# Migrate the existing ZIGBEE2MQTT_DATA folder (configuration.yaml, database.db,
+# state files, coordinator_backup.json). Do not regenerate pan_id, ext_pan_id,
+# network_key or channel; do not delete existing device entries.
+# SLZB-06MU pilot firmware 7.3.1.0 / EZSP v12: continue using ezsp.
+# 192.168.35.11 is proposed production address, pending Valen/IT confirmation.
+version: 5
+mqtt:
+  server: mqtt://127.0.0.1:1883
+  base_topic: zigbee2mqtt
+serial:
+  port: tcp://192.168.35.11:6638
+  adapter: ezsp
+advanced:
+  last_seen: ISO_8601
+frontend:
+  enabled: true
+  host: 127.0.0.1
+  port: 8080
+availability:
+  enabled: true
+  passive:
+    timeout: 15
+# Network identity and paired device entries are deliberately not included!
