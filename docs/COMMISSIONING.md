@@ -1,29 +1,26 @@
-# Resume here — hardware commissioning
+# Commissioning state — 2026-11-17
 
-## Recorded state (2026-11-16)
-- SLZB-06MU and SNZB-02D available. Coordinator AP was accessible at 192.168.1.1. Reported core firmware v3.2.6.dev3, radio firmware 20231030; recheck.
-- Development PC company Ethernet 192.168.21.123; secondary adapter 192.168.50.10/24. Proposed coordinator 192.168.50.20 never answered ARP/TCP; **not a confirmed address**.
-- pnpm.exe blocked by Device Guard; npm Zigbee2MQTT onboarding attempted, normal startup unverified. Use approved supported installation. Do not bypass policy.
-- WTR10-E working; leave unchanged. Never start local EMS collector or aggregation: .env points to production.
+For the production rollout and acceptance plan, see [VALEN_PRODUCTION_PR.md](VALEN_PRODUCTION_PR.md).
 
-## Resume sequence
-1. Establish Ethernet via approved DHCP network or isolated router; obtain actual coordinator IP from lease/MAC. Restore DHCP on secondary PC adapter if using DHCP. Do not change main company adapter.
-2. Confirm web and TCP 6638: `py -m bridge.preflight --coordinator VERIFIED_IP` (also checks local MQTT). Do not use a guessed IP.
-3. Configure approved Zigbee2MQTT using bridge/zigbee2mqtt.example.yaml. Match radio firmware and adapter to installed version; old firmware may require approved upgrade for ember. Back up before firmware changes.
-4. Enable last_seen ISO_8601, pair SNZB-02D, rename TH-02, disable permit join. Verify zigbee2mqtt/TH-02 payload: temperature, humidity, battery, linkquality, last_seen.
-5. Stop simulator/test bridge. Copy bridge/config.production.example.json to a private local config outside Git. Set BRIDGE_CONFIG to absolute path; confirm actual MQTT host and loopback Modbus 1502. Start `py -m bridge.bridge`. No SQL.
-6. Run `py -m bridge.probe --unit 1`; compare temperature/RH with LCD, verify battery/LQI. Observe real report cadence, tune offline timeout, verify stale exception/recovery.
-7. Complete docs/RANGE_TEST.md, including dead zones; no router until measured.
-8. Verify EMS UI build in isolated approved dev environment; Valen deploys Windows services only after acceptance.
+## Verified local pilot
+- SLZB-06MU is reachable at **192.168.50.20:6638**, dedicated PC adapter 192.168.50.10. This is the actual live pilot, not the proposed production address.
+- Zigbee2MQTT 2.14.3 / zigbee-herdsman 11.2.0 with working **ezsp** driver. Radio reports firmware **7.3.1.0 build 176, EZSP v12**. Ember cannot initialize against this version; do not switch until Valen separately approves a radio firmware upgrade.
+- SNZB-02D **TH-02** has rejoined automatically after coordinator power interruption at least once. At 2026-11-17 15:59:31 Taiwan time, fresh MQTT message: 27.3 C, 57.6%RH, 100% battery, LQI 255. Probe on 127.0.0.1:1502 Unit 1 decoded the same values.
+- Local MQTT broker 1883, Z2M UI 8080, Modbus bridge 1502, recovery API 8002, preview UI 5175 were all accepting TCP connections. Developer PC has a per-login watchdog task but its continuous operation was not proved; it is not production service deployment.
+- The local preview is not the actual SQL-backed production Environment endpoint. Original EMS .env points to production SQL. Do not start local collector/aggregator.
+- Existing wired WTR10-E/TH-01 and factory placement architecture are unchanged.
 
-## Repeatable software tests
-```powershell
-py -m pip install -r requirements.txt
-py -m unittest bridge.test_bridge -v
-py -m bridge.verify_ems "PATH_TO_SanderEMS.zip"
-py -m bridge.preflight
-```
-Optional real-broker smoke test: `py -m unittest bridge.test_mqtt_integration -v` against isolated localhost Mosquitto. The source compatibility test extracts only six explicit source files; never .env, database files, collector, or aggregation. Record test results and exact installed versions.
+## Critical deployment controls
+- Back up original Z2M data and coordinator identity before any move; retain channel/PAN/network key, database and TH-02 ID. Stop dev instance before connecting production instance; only one process may own coordinator.
+- Proposed production coordinator **192.168.35.11**, not yet approved/reserved by IT.
+- Enable Z2M device availability for battery devices (passive 15 minutes pilot setting); matching bridge timeout 900 seconds, revise after 24–72 hour cadence observation to avoid false alarms.
+- Use WinSW services for Mosquitto/Z2M/bridge process lifecycle and a startup Scheduled Task for conservative service-health supervision; do not migrate the old user-login watchdog task.
+- Monitor software health separately from sensor freshness: an online MQTT socket or LQI reading cached at startup is not proof of a live sensor message. Sensor must produce a new last_seen timestamp.
+- No automatic pairing, reboot loops for one sleeping sensor, coordinator factory reset or hardware writes.
 
-## Acceptance state
-Isolated actual EMS reader test exercised negative temperature, two unit IDs, offline and recovery with synthetic payloads. UI source anchors checked. Hardware, MQTT broker end-to-end, frontend build/runtime, Windows service installation and range measurements still require verification. No production database access or equipment writes.
+## Verification commands (isolated)
+    py -m unittest bridge.test_bridge deploy.test_recovery_supervisor deploy.test_contract -v
+    py -m bridge.probe --unit 1
+    py -m bridge.verify_ems PATH_TO_CURRENT_EMS.zip
+
+Real broker smoke: python -m unittest bridge.test_mqtt_integration -v against approved isolated localhost Mosquitto. Original EMS staging source and SQL permissions are required for production-dashboard acceptance.
