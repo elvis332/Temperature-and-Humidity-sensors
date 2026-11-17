@@ -6,6 +6,7 @@ It never directly launches node.exe: Service Control Manager owns process lifecy
 import argparse
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import re
 import socket
 import subprocess
@@ -242,10 +243,17 @@ def supervise(config, once=False):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--config", required=True)
+    p.add_argument("--log-file", default=None, help="Append rotating IT-visible recovery audit log")
     p.add_argument("--once", action="store_true",
                    help="One read-only pass through checks; no start/restart actions")
     args = p.parse_args()
-    logging.basicConfig(level=logging.INFO,
+    handlers = [logging.StreamHandler(sys.stdout)]
+    if args.log_file:
+        log_path = Path(args.log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(RotatingFileHandler(log_path, maxBytes=2_000_000,
+                                            backupCount=5, encoding="utf-8"))
+    logging.basicConfig(level=logging.INFO, handlers=handlers,
                         format="%(asctime)s %(levelname)s %(message)s")
     if sys.platform != "win32":
         raise SystemExit("Run supervisor on the approved Windows server only")
