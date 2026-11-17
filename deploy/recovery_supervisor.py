@@ -35,7 +35,8 @@ def load_config(path):
     for key in ("mqtt_port", "coordinator_port", "z2m_port", "bridge_port"):
         if not isinstance(config[key], int) or not 1 <= config[key] <= 65535:
             raise ValueError(f"Invalid {key}")
-    for key, minimum in (("check_interval_seconds", 5),
+    for key, minimum in (("z2m_health_timeout_seconds", 1200),
+                         ("check_interval_seconds", 5),
                          ("failures_before_action", 2),
                          ("restart_cooldown_seconds", 60)):
         if not isinstance(config[key], int) or config[key] < minimum:
@@ -158,6 +159,7 @@ class Freshness:
 
 def supervise(config, once=False):
     freshness = Freshness(config["sensors"])
+    heartbeat = {"connected": False, "started": time.monotonic(), "last": None}
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                          client_id="sander-production-recovery-monitor")
     user = __import__("os").environ.get("MQTT_USER")
@@ -171,15 +173,30 @@ def supervise(config, once=False):
 
     def on_connect(c, userdata, flags, reason, properties):
         if not reason.is_failure:
-            c.subscribe([(topic, 1) for topic in freshness.timeouts])
-            LOG.info("MQTT observer connected")
+            heartbeat["connected"] = True
+            heartbeat["started"] = time.monotonic()
+            heartbeat["last"] = None
+            subscriptions = [(topic, 1) for topic in freshness.timeouts]
+            subscriptions.append(("zigbee2mqtt/bridge/health", 0))
+            c.subscribe(subscriptions)
+            LOG.info("MQTT observer connected; waiting for fresh Zigbee2MQTT health")
         else:
             LOG.warning("MQTT observer connection refused: %s", reason)
 
     def on_disconnect(c, userdata, flags, reason, properties):
+        heartbeat["connected"] = False
         LOG.warning("MQTT observer disconnected: %s", reason)
 
     def on_message(c, userdata, message):
+        if message.topic == "zigbee2mqtt/bridge/health":
+            if not message.retain:
+                try:
+                    health = json.loads(message.payload)
+                    if isinstance(health, dict) and "process" in health and "mqtt" in health:
+                        heartbeat["last"] = time.monotonic()
+                except (ValueError, TypeError):
+                    pass
+            return
         if freshness.update(message.topic, message.payload, message.retain):
             LOG.info("Fresh sensor data: %s", message.topic)
 
@@ -197,9 +214,13 @@ def supervise(config, once=False):
         while True:
             mqtt_ok = tcp_open(config["mqtt_host"], config["mqtt_port"])
             coordinator_ok = tcp_open(config["coordinator_host"], config["coordinator_port"])
-            z2m_ready = http_ready(config["z2m_host"], config["z2m_port"])
+            z2m_http_ready = http_ready(config["z2m_host"], config["z2m_port"])
             bridge_ready = tcp_open(config["bridge_host"], config["bridge_port"])
             now = time.monotonic()
+            last_health = heartbeat["last"]
+            reference = last_health if last_health is not None else heartbeat["started"]
+            heartbeat_stale = heartbeat["connected"] and (now - reference > config["z2m_health_timeout_seconds"])
+            z2m_ready = z2m_http_ready and not heartbeat_stale
             items = (
                 ("z2m", config["z2m_service"], mqtt_ok and coordinator_ok, z2m_ready),
                 ("bridge", config["bridge_service"], mqtt_ok, bridge_ready),
@@ -219,6 +240,9 @@ def supervise(config, once=False):
                                 key, failures[key], action, name)
                     last_action[key] = now
                     failures[key] = 0
+                    if key == "z2m":
+                        heartbeat["started"] = now
+                        heartbeat["last"] = None
                     if action == "start":
                         sc_action("start", name)
                     else:
@@ -228,6 +252,9 @@ def supervise(config, once=False):
                     LOG.info("%s reachable=%s service=%s upstream=%s",
                              key, port_ok, state, upstream)
                     previous[key] = status
+            if heartbeat_stale and previous.get("heartbeat") != "STALE":
+                LOG.warning("Zigbee2MQTT health heartbeat stale; port alone does not prove a healthy radio stack")
+            previous["heartbeat"] = "STALE" if heartbeat_stale else "OK_OR_UNOBSERVED"
             for topic, status in freshness.states().items():
                 if previous.get(topic) != status:
                     LOG.warning("sensor %s status=%s (never initiate pairing/reset)", topic, status)
