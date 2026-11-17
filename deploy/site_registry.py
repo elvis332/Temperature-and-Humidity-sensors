@@ -99,6 +99,8 @@ def service_xml(name, title, executable, arguments, workingdir, data=None, env=N
         ET.SubElement(root, "env", name="ZIGBEE2MQTT_DATA", value=str(data))
     if env:
         ET.SubElement(root, "env", name="BRIDGE_CONFIG", value=str(env))
+    # Least-privilege built-in account; IT must grant read access to config/keys and write access to logs.
+    ET.SubElement(ET.SubElement(root, "serviceaccount"), "username").text = r"NT AUTHORITY\LocalService"
     ET.SubElement(root, "depend").text = "mosquitto"
     ET.SubElement(root, "startmode").text = "Automatic"
     ET.SubElement(root, "stoptimeout").text = "30 sec"
