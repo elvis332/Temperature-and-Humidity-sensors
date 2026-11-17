@@ -135,12 +135,14 @@ def build(manifest, root=r"C:\Sander"):
         ]
         bridge = {
             "mqtt_host": "127.0.0.1", "mqtt_port": 1883,
+            "mqtt_auth_file": str(rootw / "Config" / ("mqtt-bridge-" + gid + ".auth.json")),
             "client_id": f"sander-bridge-{gid}",
             "modbus_host": "127.0.0.1", "modbus_port": gw["modbus_port"],
             "sensors": mqtt_sensors
         }
         recovery = {
             "mqtt_host": "127.0.0.1", "mqtt_port": 1883,
+            "mqtt_auth_file": str(rootw / "Config" / ("mqtt-recovery-" + gid + ".auth.json")),
             "coordinator_host": gw["coordinator_host"],
             "coordinator_port": gw["coordinator_port"],
             "z2m_host": "127.0.0.1", "z2m_port": gw["z2m_ui_port"],
