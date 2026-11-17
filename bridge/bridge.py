@@ -128,7 +128,12 @@ def main():
     cfg = json.loads(Path(os.getenv("BRIDGE_CONFIG", "bridge/config.test.json")).read_text(encoding="utf-8"))
     cache = Cache(cfg["sensors"])
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=cfg["client_id"])
-    if os.getenv("MQTT_USER"):
+    if cfg.get("mqtt_auth_file"):
+        auth = json.loads(Path(cfg["mqtt_auth_file"]).read_text(encoding="utf-8"))
+        if not auth.get("username") or not auth.get("password"):
+            raise ValueError("MQTT credentials file requires username and password")
+        client.username_pw_set(auth["username"], auth["password"])
+    elif os.getenv("MQTT_USER"):
         client.username_pw_set(os.environ["MQTT_USER"], os.environ["MQTT_PASSWORD"])
     if cfg.get("mqtt_tls"):
         client.tls_set(ca_certs=cfg.get("mqtt_ca"))
