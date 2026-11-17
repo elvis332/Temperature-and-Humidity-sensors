@@ -18,8 +18,20 @@ jobs:
         run: |
           $tokens = $null
           $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path deploy/Install-SanderWatchdogTask.ps1), [ref]$tokens, [ref]$errors) | Out-Null
-          if ($errors.Count) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          foreach ($path in @(
+            'deploy/Install-SanderWatchdogTask.ps1',
+            'deploy/Local-PC-ZigbeeWatchdog.ps1',
+            'deploy/Install-LocalWatchdog.ps1',
+            'deploy/Diagnose-LocalWatchdog.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) {
+              $errors | ForEach-Object { Write-Error ($path + ': ' + $_.Message) }
+              exit 1
+            }
+          }
       - run: python -m py_compile bridge/bridge.py integrations/modbus/apply_ui.py deploy/recovery_supervisor.py
 
   mqtt-integration:
