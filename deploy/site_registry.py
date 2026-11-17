@@ -89,7 +89,7 @@ def validate(manifest):
     return by_id
 
 
-def service_xml(name, title, executable, arguments, workingdir, data=None, env=None):
+def service_xml(name, title, executable, arguments, workingdir, log_path, data=None, env=None):
     root = ET.Element("service")
     for key, value in (("id", name), ("name", title),
                        ("executable", executable), ("arguments", arguments),
@@ -105,6 +105,7 @@ def service_xml(name, title, executable, arguments, workingdir, data=None, env=N
     ET.SubElement(root, "startmode").text = "Automatic"
     ET.SubElement(root, "stoptimeout").text = "30 sec"
     ET.SubElement(root, "onfailure", action="restart", delay="30 sec")
+    ET.SubElement(root, "logpath").text = str(log_path)
     ET.SubElement(root, "log", mode="roll")
     ET.indent(root)
     return ET.tostring(root, encoding="unicode", xml_declaration=False) + "\n"
@@ -162,12 +163,12 @@ def build(manifest, root=r"C:\Sander"):
         output[f"recovery.{gid}.json"] = json.dumps(recovery, indent=2) + "\n"
         output[f"{z2m_service}.xml"] = service_xml(
             z2m_service, f"Sander Zigbee2MQTT {gid}", node,
-            str(PureWindowsPath(z2m_root) / "node_modules" / "zigbee2mqtt" / "index.js"),
-            z2m_root, data=z2m_data)
+            '"' + str(PureWindowsPath(z2m_root) / "node_modules" / "zigbee2mqtt" / "index.js") + '"',
+            z2m_root, str(rootw / "Logs" / gid / "Zigbee2MQTT"), data=z2m_data)
         output[f"{bridge_service}.xml"] = service_xml(
             bridge_service, f"Sander Zigbee Modbus Bridge {gid}",
             str(rootw / "ZigbeeBridge" / ".venv" / "Scripts" / "python.exe"),
-            "-m bridge.bridge", bridge_root, env=bridge_path)
+            "-m bridge.bridge", bridge_root, str(rootw / "Logs" / gid / "Bridge"), env=bridge_path)
         for s in own:
             rows.append({
                 "device_id": s["device_id"], "ieee_address": s["ieee_address"].lower(),
