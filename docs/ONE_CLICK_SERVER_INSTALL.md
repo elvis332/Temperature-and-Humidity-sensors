@@ -13,6 +13,8 @@ Generator deploy/site_registry.py outputs:
 
 The EMS CSV is REVIEW_ONLY_NOT_IMPORTED. **It is not an actual EMS DB import.** Valen must use the actual EMS staging application and validate duplicate checking and registration before production.
 
+For later sensor additions, run deploy/reconcile_site.py with --before old-site.json --after new-site.json before regenerating any configs. It reports additions and editable metadata updates and **blocks IEEE address, gateway, Modbus unit and existing gateway endpoint changes**, preventing accidental mixing of historical device series. This is a dry-run proposal, not an automatic upgrade or EMS import.
+
 One Modbus bridge endpoint can address at most 247 unit IDs. A multi-gateway deployment uses distinct bridge TCP ports, allowing more devices in the EMS, but actual Zigbee RF capacity is independent and must be determined by range, route/mesh stability and load testing. Each physical coordinator has one Zigbee2MQTT process and one unique MQTT base topic.
 
 ## Prepare the Windows server once (Valen or IT)
