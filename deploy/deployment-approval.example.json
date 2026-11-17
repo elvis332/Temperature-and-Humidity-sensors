@@ -1,0 +1,10 @@
+{
+  "server_name": "REPLACE_WITH_WINDOWS_SERVER_NAME",
+  "approved_by": "REPLACE_WITH_VALEN_OR_IT_REVIEWER",
+  "coordinator_ip_approved": false,
+  "broker_security_approved": false,
+  "service_accounts_approved": false,
+  "backup_and_cutover_approved": false,
+  "authorized_for_server_install": false,
+  "winsw_sha256": "REPLACE_WITH_APPROVED_BINARY_SHA256"
+}
