@@ -8,6 +8,7 @@ from pathlib import Path
 
 from deploy.site_registry import build, validate
 from deploy.server_preflight import evaluate
+from deploy.reconcile_site import review
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -81,6 +82,20 @@ class SiteRegistryTests(unittest.TestCase):
         manifest["gateways"].append(gw)
         with self.assertRaises(ValueError):
             validate(manifest)
+
+    def test_additive_onboarding_preserves_history_and_flags_migrations(self):
+        previous = example()
+        changed = copy.deepcopy(previous)
+        other = copy.deepcopy(changed["sensors"][0])
+        other.update(device_id="TH-03", friendly_name="TH-03",
+                     ieee_address="0x0000000000000003", unit_id=2, location="Zone 3")
+        changed["sensors"].append(other)
+        result = review(previous, changed)
+        self.assertEqual(result["added"], ["TH-03"])
+        self.assertFalse(result["blockers"])
+        self.assertFalse(result["automatically_applied"])
+        changed["sensors"][0]["unit_id"] = 3
+        self.assertTrue(review(previous, changed)["blockers"])
 
     def test_uninstalled_preflight_reports_missing_paired_data(self):
         with tempfile.TemporaryDirectory() as folder:
