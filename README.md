@@ -13,6 +13,9 @@ Live pilot verified 2026-11-17: SONOFF SNZB-02D (TH-02) -> SLZB-06MU Ethernet co
 - integrations/modbus/validate_ems_staging.py — source-only staging contract checker for Valen; makes no database or collector calls.
 - deploy/zigbee2mqtt-service.xml and bridge-service.xml — IT-approved WinSW service templates; auto-start on reboot.
 - deploy/recovery_supervisor.py — supervises only approved Windows service names; observes sensor freshness, never resets/re-pairs devices.
+- deploy/site_registry.py — validated multi-gateway fleet inventory, per-gateway services/bridge configs and EMS device-registration REVIEW CSV.
+- deploy/reconcile_site.py — identifies new sensors and blocks unintended identity/Modbus remapping.
+- deploy/OneClick-Check-SanderServer.cmd and OneClick-Install-SanderServer.cmd — IT-approved Windows server preflight and installation launchers.
 - deploy/Install-SanderWatchdogTask.ps1 — boot-time SYSTEM Scheduled Task installer; dry-run by default and only acts with explicit -Apply.
 - deploy/recovery.example.json — production host/port/service names and sensor timeout.
 - deploy/zigbee2mqtt.production-settings.example.yaml — review-only config excerpt, **not** replacement for existing network identity.
