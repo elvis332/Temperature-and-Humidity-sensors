@@ -57,6 +57,8 @@ def create_admin_router(
     audit_change: Callable,
     register_transaction: Callable | None = None,
     native_proxy_paths: dict[str, str] | None = None,
+    pairing_writes_enabled: bool = False,
+    device_settings_writes_enabled: bool = False,
 ) -> APIRouter:
     """Mount under the existing EMS authenticated API router.
 
@@ -64,6 +66,8 @@ def create_admin_router(
     unauthorized users. Audit callback must persist in the existing EMS audit system.
     register_transaction must apply a single approved EMS and bridge registration
     transaction, otherwise registration commit is intentionally unavailable.
+    Pairing and sensor-setting MQTT writes are independently disabled by default.
+    Valen/IT must opt in explicitly after site approval and staging acceptance.
     """
     if not callable(require_ems_admin) or not callable(audit_change):
         raise ValueError("Require existing EMS administrator authentication and audit logging")
@@ -98,6 +102,13 @@ def create_admin_router(
         except InvalidRequest as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    def _require_approved_write(enabled: bool, operation: str):
+        if enabled is not True:
+            raise HTTPException(
+                status_code=423,
+                detail=f"{operation} disabled pending Valen/IT approval and staging validation",
+            )
+
     def _perform(fn):
         try:
             return fn()
@@ -110,6 +121,8 @@ def create_admin_router(
     def capabilities():
         return {
             "registration_commit_enabled": register_transaction is not None,
+            "pairing_writes_enabled": pairing_writes_enabled is True,
+            "device_settings_writes_enabled": device_settings_writes_enabled is True,
             "pairing_max_seconds": 60,
             "advanced_native_requires_it_proxy": True,
             "automatic_pairing_at_startup": False,
@@ -142,6 +155,7 @@ def create_admin_router(
 
     @router.post("/gateways/{gateway_id}/permit-join")
     def permit_join(gateway_id: str, payload: JoinPayload, principal=Depends(require_ems_admin)):
+        _require_approved_write(pairing_writes_enabled, "Zigbee pairing")
         gw = _gateway(gateway_id)
         _audit("zigbee.permit_join.requested", principal, gateway=gateway_id,
                seconds=payload.seconds)
@@ -153,6 +167,7 @@ def create_admin_router(
     @router.post("/gateways/{gateway_id}/devices/{ieee_address}/expose")
     def set_expose(gateway_id: str, ieee_address: str, payload: ExposePayload,
                    principal=Depends(require_ems_admin)):
+        _require_approved_write(device_settings_writes_enabled, "Zigbee sensor settings")
         gw = _gateway(gateway_id)
         _audit("zigbee.expose.requested", principal, gateway=gateway_id,
                ieee_address=ieee_address, setting=payload.setting)
@@ -164,6 +179,7 @@ def create_admin_router(
     @router.post("/gateways/{gateway_id}/devices/{ieee_address}/option")
     def set_option(gateway_id: str, ieee_address: str, payload: OptionPayload,
                    principal=Depends(require_ems_admin)):
+        _require_approved_write(device_settings_writes_enabled, "Zigbee device options")
         gw = _gateway(gateway_id)
         _audit("zigbee.option.requested", principal, gateway=gateway_id,
                ieee_address=ieee_address, option=payload.option)
