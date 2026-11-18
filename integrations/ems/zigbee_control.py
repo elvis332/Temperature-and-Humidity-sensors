@@ -260,12 +260,10 @@ class ZigbeeGateway:
 
     def set_device_option(self, ieee: str, option: str, value: Any):
         device = self.by_ieee(ieee)
-        if option not in {"debounce", "filtered_optimistic"}:
-            raise InvalidRequest("Unsupported Zigbee2MQTT device option")
-        if not isinstance(value, bool) and option == "filtered_optimistic":
-            raise InvalidRequest("filtered_optimistic must be boolean")
-        if option == "debounce" and (type(value) is not int or not 0 <= value <= 10):
-            raise InvalidRequest("debounce must be an integer 0–10")
+        if option != "debounce":
+            raise InvalidRequest("Only safe debounce is supported through EMS; other options are in native Advanced Maintenance")
+        if type(value) is not int or not 0 <= value <= 10:
+            raise InvalidRequest("debounce must be an integer 0–10 seconds")
         return self.request("device/options", {"id": device["ieee_address"], "options": {option: value}})
 
     def set_expose(self, ieee: str, setting: str, value: Any):
