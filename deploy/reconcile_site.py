@@ -19,7 +19,7 @@ def review(before, after):
     old_gw = {x["id"]: x for x in before["gateways"]}
     new_gw = {x["id"]: x for x in after["gateways"]}
     for gid in set(old_gw) & set(new_gw):
-        for field in ("coordinator_host", "coordinator_port", "mqtt_base_topic",
+        for field in ("coordinator_transport", "coordinator_host", "coordinator_port", "mqtt_base_topic",
                       "modbus_port", "z2m_ui_port"):
             if old_gw[gid][field] != new_gw[gid][field]:
                 blocked.append(f"{gid}: gateway.{field} changed; requires a dedicated migration plan")
