@@ -131,8 +131,7 @@ def build(manifest, root=r"C:\Sander"):
     site = manifest.get("site_id", "SanderSite")
     for gid, gw in by_id.items():
         own = [s for s in manifest["sensors"] if s["gateway_id"] == gid]
-        if not own:
-            raise ValueError(f"{gid}: no assigned sensors")
+        # Empty gateway is valid: register the coordinator first, then pair sensors.
         prefix = gw["mqtt_base_topic"]
         z2m_service = "SanderZ2M" + gid
         bridge_service = "SanderBridge" + gid
