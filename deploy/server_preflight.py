@@ -13,6 +13,9 @@ def evaluate(root, manifest):
     validate(manifest)
     for gw in manifest["gateways"]:
         gid = gw["id"]
+        if gw.get("coordinator_transport", "ethernet_tcp") != "ethernet_tcp":
+            errors.append(f"{gid}: SLZB-06MU must use supported Ethernet TCP to the server, not RS-485")
+            continue
         z2m_entry = root / "zigbee2mqtt" / gid / "node_modules" / "zigbee2mqtt" / "index.js"
         z2m_data = root / "Config" / ("zigbee2mqtt." + gid)
         conf = z2m_data / "configuration.yaml"
