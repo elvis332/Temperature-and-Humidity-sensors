@@ -29,8 +29,8 @@ def validate(manifest):
     gateways, sensors = manifest.get("gateways"), manifest.get("sensors")
     if not isinstance(gateways, list) or not gateways:
         raise ValueError("At least one gateway is required")
-    if not isinstance(sensors, list) or not sensors:
-        raise ValueError("At least one sensor is required")
+    if not isinstance(sensors, list):
+        raise ValueError("Sensors must be a list (empty is allowed before first pairing)")
     by_id = {}
     used_ports, used_topics, used_devids, used_ieees, used_units, used_coordinators = set(), set(), set(), set(), set(), set()
     for gw in gateways:
