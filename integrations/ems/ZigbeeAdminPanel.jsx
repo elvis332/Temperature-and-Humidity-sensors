@@ -67,6 +67,9 @@ export default function ZigbeeAdminPanel({ basePath="/api/admin/zigbee", csrfTok
   const selected = devices.find(d => d.ieee_address === selection);
   const gatepath = "/gateways/" + encodeURIComponent(gatewayId);
   const offline = !gateway?.mqtt_connected || gateway?.zigbee2mqtt_state !== "online";
+  // Missing capabilities always means denied. Backend remains the real security gate.
+  const pairingApproved = capabilities.pairing_writes_enabled === true;
+  const settingsApproved = capabilities.device_settings_writes_enabled === true;
   const settings = ["comfort_temperature_min", "comfort_temperature_max",
     "comfort_humidity_min", "comfort_humidity_max", "temperature_calibration",
     "humidity_calibration"];
@@ -112,15 +115,16 @@ export default function ZigbeeAdminPanel({ basePath="/api/admin/zigbee", csrfTok
 
     <fieldset disabled={loading || !gatewayId}>
       <legend>Add sensor / 新增感測器</legend>
+      {!pairingApproved && <p role="status">Pairing is disabled until Valen/IT explicitly approves the staging-tested gateway. 配對功能尚未核准啟用。</p>}
       <label>Pairing window in seconds (1–60)
         <input type="number" min="1" max="60" value={joinSeconds}
           onChange={e => setJoinSeconds(Number(e.target.value))}/>
       </label>
-      <button type="button" disabled={offline || !Number.isInteger(joinSeconds) || joinSeconds < 1 || joinSeconds > 60}
+      <button type="button" disabled={!pairingApproved || offline || !Number.isInteger(joinSeconds) || joinSeconds < 1 || joinSeconds > 60}
         onClick={() => perform("pairing", gatepath + "/permit-join", {seconds:joinSeconds})}>
         Open pairing window
       </button>
-      <button type="button" disabled={offline}
+      <button type="button" disabled={!pairingApproved || offline}
         onClick={() => perform("close pairing", gatepath + "/permit-join", {seconds:0})}>
         Close pairing
       </button>
@@ -157,6 +161,7 @@ export default function ZigbeeAdminPanel({ basePath="/api/admin/zigbee", csrfTok
 
     <fieldset disabled={loading || !gatewayId}>
       <legend>Advanced Maintenance / 進階維護</legend>
+      {!settingsApproved && <p role="status">Sensor-setting writes are disabled until site approval. Read-only diagnostics remain available. 感測器設定尚未核准變更。</p>}
       <label>Sensor
         <select value={selection} onChange={e => setSelection(e.target.value)}>
           {devices.map(d => <option key={d.ieee_address} value={d.ieee_address}>
@@ -172,7 +177,7 @@ export default function ZigbeeAdminPanel({ basePath="/api/admin/zigbee", csrfTok
       <label>Value
         <input type="number" step="0.1" value={settingValue} onChange={e => setSettingValue(e.target.value)}/>
       </label>
-      <button type="button" disabled={offline || !selected || settingValue.trim() === ""}
+      <button type="button" disabled={!settingsApproved || offline || !selected || settingValue.trim() === ""}
         onClick={() => perform("setting", gatepath + "/devices/" + encodeURIComponent(selection) + "/expose",
           {setting, value:Number(settingValue)})}>Send setting</button>
       <p>Settings sent to sleeping sensors are not proof of application. Wake sensor and verify its new report.</p>
