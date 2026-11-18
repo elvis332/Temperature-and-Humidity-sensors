@@ -175,18 +175,22 @@ def create_admin_router(
         if register_transaction is None:
             raise HTTPException(status_code=501,
                                 detail="EMS database/bridge registration adapter not installed; no changes made")
-        plan = _perform(lambda: fleet.registration_plan(**payload.model_dump()))
-        _audit("zigbee.registration.commit_requested", principal, gateway=payload.gateway_id,
-               device_id=payload.device_id, ieee_address=payload.ieee_address)
-        try:
-            # Real EMS must atomically synchronize registration, bridge config,
-            # existing Devices records and audited rollback. NEVER raw SQL here.
-            result = register_transaction(plan, principal)
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail="EMS registration failed; verify rollback") from exc
-        _audit("zigbee.registration.committed", principal, gateway=payload.gateway_id,
-               device_id=payload.device_id, ieee_address=payload.ieee_address)
-        return {"committed": True, "result": result}
+        with fleet.registration_lock:
+            plan = _perform(lambda: fleet.registration_plan(**payload.model_dump()))
+            _audit("zigbee.registration.commit_requested", principal, gateway=payload.gateway_id,
+                   device_id=payload.device_id, ieee_address=payload.ieee_address)
+            try:
+                # The injected adapter must commit EMS Devices DB AND protected
+                # gateway bridge file, with rollback/identity checks. Never raw SQL here.
+                result = register_transaction(plan, principal)
+                if not isinstance(result, dict) or result.get("committed") is not True:
+                    raise ValueError("Registration adapter did not confirm committed transaction")
+                fleet.apply_committed_plan(plan)
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail="EMS registration not confirmed; investigate transaction and rollback") from exc
+            _audit("zigbee.registration.committed", principal, gateway=payload.gateway_id,
+                   device_id=payload.device_id, ieee_address=payload.ieee_address)
+            return {"committed": True, "result": result}
 
     @router.post("/gateways/{gateway_id}/network/propose")
     def propose_network(gateway_id: str, payload: ConnectionProposal,
