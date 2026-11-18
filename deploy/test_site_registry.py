@@ -76,6 +76,21 @@ class SiteRegistryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate(manifest)
 
+    def test_reject_unsupported_rs485_as_zigbee_coordinator_transport(self):
+        manifest = example()
+        manifest["gateways"][0]["coordinator_transport"] = "rs485_modbus"
+        with self.assertRaisesRegex(ValueError, "Ethernet TCP"):
+            validate(manifest)
+
+    def test_one_z2m_owner_per_coordinator_endpoint(self):
+        manifest = example()
+        second = copy.deepcopy(manifest["gateways"][0])
+        second.update(id="GW02", mqtt_base_topic="zigbee2mqtt-gw02",
+                      modbus_port=1503, z2m_ui_port=8081)
+        manifest["gateways"].append(second)
+        with self.assertRaisesRegex(ValueError, "duplicate coordinator TCP endpoint"):
+            validate(manifest)
+
     def test_reject_conflicting_ports_and_topics(self):
         manifest = example()
         gw = dict(manifest["gateways"][0], id="GW02")
