@@ -16,6 +16,10 @@ export default function ZigbeeAdminPanel({ basePath="/api/admin/zigbee", csrfTok
   const [setting, setSetting] = useState("comfort_temperature_max");
   const [settingValue, setSettingValue] = useState("27");
   const [networkIp, setNetworkIp] = useState("");
+  const [dhcp, setDhcp] = useState(false);
+  const [subnetMask, setSubnetMask] = useState("255.255.255.0");
+  const [routerIp, setRouterIp] = useState("");
+  const [dnsIp, setDnsIp] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [registration, setRegistration] = useState(null);
@@ -182,10 +186,29 @@ export default function ZigbeeAdminPanel({ basePath="/api/admin/zigbee", csrfTok
       <label>Proposed coordinator IP (review only)
         <input value={networkIp} placeholder="192.168.x.x" onChange={e => setNetworkIp(e.target.value)}/>
       </label>
+      <label>
+        <input type="checkbox" checked={dhcp} onChange={e => setDhcp(e.target.checked)}/>
+        DHCP enabled / DHCP
+      </label>
+      <label>Subnet mask
+        <input value={subnetMask} onChange={e => setSubnetMask(e.target.value)}
+          disabled={dhcp} placeholder="255.255.255.0"/>
+      </label>
+      <label>Router / Gateway IP
+        <input value={routerIp} onChange={e => setRouterIp(e.target.value)}
+          disabled={dhcp} placeholder="192.168.x.1"/>
+      </label>
+      <label>Company-approved DNS
+        <input value={dnsIp} onChange={e => setDnsIp(e.target.value)}
+          disabled={dhcp} placeholder="192.168.x.x"/>
+      </label>
       <button type="button" disabled={!networkIp.trim()}
         onClick={() => perform("network", gatepath + "/network/propose", {
           coordinator_host:networkIp.trim(), coordinator_port:6638,
           coordinator_transport:"ethernet_tcp",
+          dhcp, subnet_mask:dhcp ? null : subnetMask,
+          default_gateway:dhcp ? null : (routerIp.trim() || null),
+          dns_servers:dhcp || !dnsIp.trim() ? [] : [dnsIp.trim()],
         })}>Request IT network review</button>
       <p>No live SLZB-06MU IP or Zigbee2MQTT configuration is changed by this form.</p>
     </fieldset>
