@@ -198,7 +198,7 @@ def create_admin_router(
         try:
             # require concrete private/IT-routable IP, no localhost/public network tricks
             ip = ipaddress.ip_address(payload.coordinator_host)
-            if not ip.is_private or ip.is_loopback or ip.is_multicast or ip.is_unspecified:
+            if not ip.is_private or ip.is_loopback or ip.is_multicast or ip.is_unspecified or ip.is_link_local:
                 raise ValueError("unacceptable")
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="Approved private coordinator IP required") from exc
