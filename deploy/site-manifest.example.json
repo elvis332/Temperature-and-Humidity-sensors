@@ -8,7 +8,8 @@
       "coordinator_port": 6638,
       "mqtt_base_topic": "zigbee2mqtt",
       "z2m_ui_port": 8080,
-      "modbus_port": 1502
+      "modbus_port": 1502,
+      "coordinator_transport": "ethernet_tcp"
     }
   ],
   "sensors": [
