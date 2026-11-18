@@ -12,7 +12,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements-ems-admin.txt
-      - run: python -m unittest bridge.test_bridge deploy.test_recovery_supervisor deploy.test_contract deploy.test_site_registry integrations.modbus.test_validate_ems_staging integrations.ems.test_zigbee_control integrations.ems.test_zigbee_api -v
+      - run: pip install --no-deps -e .
+      - run: python -m unittest bridge.test_bridge deploy.test_recovery_supervisor deploy.test_contract deploy.test_site_registry integrations.modbus.test_validate_ems_staging integrations.ems.test_zigbee_control integrations.ems.test_zigbee_api bridge.test_registry_reload -v
+      - name: Parse React Zigbee Devices component
+        shell: bash
+        run: npx --yes esbuild@0.25.12 integrations/ems/ZigbeeAdminPanel.jsx --bundle --format=esm --platform=browser --external:react --outfile=zigbee-admin-check.js
       - name: Validate PowerShell installer syntax
         shell: pwsh
         run: |
@@ -33,7 +37,7 @@ jobs:
               exit 1
             }
           }
-      - run: python -m py_compile bridge/bridge.py integrations/modbus/apply_ui.py integrations/ems/zigbee_control.py integrations/ems/zigbee_api.py deploy/recovery_supervisor.py
+      - run: python -m py_compile bridge/bridge.py integrations/modbus/apply_ui.py integrations/ems/zigbee_control.py integrations/ems/zigbee_api.py integrations/ems/apply_devices_page.py bridge/test_registry_reload.py deploy/recovery_supervisor.py
 
   mqtt-integration:
     runs-on: ubuntu-latest
