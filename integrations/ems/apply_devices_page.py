@@ -21,9 +21,9 @@ def prepare(ems_root: Path):
     if not ("export default" in text or "function DevicesPage" in text):
         raise ValueError("Unexpected DevicesPage layout; review source first")
     return page, IMPORT + "\n" + text.replace(MARKER,
-            '<ZigbeeAdminPanel csrfToken={csrfToken} />')
-    # Valen should adapt csrfToken prop to existing EMS CSRF mechanism.
-    # If EMS uses bearer tokens, adapt call headers rather than disabling CSRF.
+            '<ZigbeeAdminPanel />')
+    # Valen must pass an approved EMS CSRF token prop when the app uses cookie sessions.
+    # Never disable existing server-side CSRF checks to make this component work.
 
 
 def main():
