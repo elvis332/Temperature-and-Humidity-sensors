@@ -97,6 +97,16 @@ def create_admin_router(
         except Unavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    @router.get("/capabilities")
+    def capabilities():
+        return {
+            "registration_commit_enabled": register_transaction is not None,
+            "pairing_max_seconds": 60,
+            "advanced_native_requires_it_proxy": True,
+            "automatic_pairing_at_startup": False,
+            "network_changes_apply_live": False,
+        }
+
     @router.get("/gateways")
     def gateways():
         return [gw.snapshot() for gw in fleet.gateways.values()]
