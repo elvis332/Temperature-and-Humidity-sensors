@@ -11,8 +11,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -r requirements.txt
-      - run: python -m unittest bridge.test_bridge deploy.test_recovery_supervisor deploy.test_contract deploy.test_site_registry integrations.modbus.test_validate_ems_staging -v
+      - run: pip install -r requirements-ems-admin.txt
+      - run: python -m unittest bridge.test_bridge deploy.test_recovery_supervisor deploy.test_contract deploy.test_site_registry integrations.modbus.test_validate_ems_staging integrations.ems.test_zigbee_control integrations.ems.test_zigbee_api -v
       - name: Validate PowerShell installer syntax
         shell: pwsh
         run: |
@@ -33,7 +33,7 @@ jobs:
               exit 1
             }
           }
-      - run: python -m py_compile bridge/bridge.py integrations/modbus/apply_ui.py deploy/recovery_supervisor.py
+      - run: python -m py_compile bridge/bridge.py integrations/modbus/apply_ui.py integrations/ems/zigbee_control.py integrations/ems/zigbee_api.py deploy/recovery_supervisor.py
 
   mqtt-integration:
     runs-on: ubuntu-latest
