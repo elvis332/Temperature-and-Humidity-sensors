@@ -6,6 +6,19 @@ Live pilot verified 2026-11-17: SONOFF SNZB-02D (TH-02) -> SLZB-06MU Ethernet co
 
 **Start with [Valen's production PR review](docs/VALEN_PRODUCTION_PR.md) and the [one-click server staging installer guide](docs/ONE_CLICK_SERVER_INSTALL.md).** A multi-gateway registry and generated EMS device registration review manifest are available, but do not directly write to company SQL. For the failed developer-PC watchdog task (Ready, exit result 1), see [local task diagnosis and guarded repair](docs/WATCHDOG_RECOVERY.md).
 
+## EMS administrator-controlled Zigbee Devices integration
+
+The repository now includes a reviewed, **opt-in** EMS admin module:
+
+- integrations/ems/zigbee_control.py: multiple gateway MQTT subscriptions, discovered devices, correlated Zigbee2MQTT request/reply, 60-second pairing, safe device exposes/options, and immutable EMS registration plans.
+- integrations/ems/zigbee_api.py: FastAPI route factory requiring the EXISTING EMS administrator dependency and persistent audit callback. Unsupported direct SQL registration remains disabled until an approved EMS transaction adapter is injected.
+- integrations/ems/ZigbeeAdminPanel.jsx: gateway/device discovery and registration review, comfort/calibration settings, network configuration proposal, native Advanced Maintenance link (only when secured by IT).
+- integrations/ems/apply_devices_page.py: fails closed unless Valen marks a deliberate integration slot in an isolated EMS Devices page.
+- bridge/bridge.py: optional approved registry hot reload to add new sensors without restarting Zigbee2MQTT; refuses changed unit IDs, MQTT topics or silent sensor retirement.
+- docs/EMS_ZIGBEE_ADMIN.md: exact staging integration points for Valen, with security, historical SQL acceptance, pairing and rollback gates.
+
+The module is NOT automatically mounted into the main Sander EMS. The full EMS app source/API/schema is not in this connected GitHub repository; live SQL registration and the secure native Zigbee2MQTT reverse proxy require Valen's staging integration and validation. No hardware controls or production data have been changed.
+
 ## Key files
 - bridge/bridge.py and bridge/config.production.example.json — read-only MQTT-to-Modbus bridge with 900-second provisional freshness cutoff, rejects stale/replayed reports.
 - config/profiles/SNZB02D.yaml — four-register EMS profile for temperature, humidity, battery and LQI.
