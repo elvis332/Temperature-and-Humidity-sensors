@@ -32,11 +32,17 @@ def validate(manifest):
     if not isinstance(sensors, list) or not sensors:
         raise ValueError("At least one sensor is required")
     by_id = {}
-    used_ports, used_topics, used_devids, used_ieees, used_units = set(), set(), set(), set(), set()
+    used_ports, used_topics, used_devids, used_ieees, used_units, used_coordinators = set(), set(), set(), set(), set(), set()
     for gw in gateways:
         name = gw.get("id")
         if not isinstance(name, str) or not GATEWAY_ID.fullmatch(name) or name in by_id:
             raise ValueError("Gateway id must be unique and contain only letters/digits")
+        # Physical SLZB-06MU coordinator is Zigbee-to-Ethernet (LAN/PoE):
+        # RS-485 is a separate transport used by Modbus meters, NOT this radio link.
+        # Refuse ambiguous or unsupported transport rather than silently building wrong wiring.
+        mode = gw.get("coordinator_transport", "ethernet_tcp")
+        if mode != "ethernet_tcp":
+            raise ValueError(f"{name}: unsupported coordinator_transport {mode!r}; SLZB-06MU expects Ethernet TCP, not RS-485 Modbus")
         host = gw.get("coordinator_host")
         if not isinstance(host, str) or not HOST.fullmatch(host):
             raise ValueError(f"{name}: invalid coordinator host")
@@ -44,6 +50,10 @@ def validate(manifest):
             value = gw.get(prop)
             if type(value) is not int or not 1 <= value <= 65535:
                 raise ValueError(f"{name}: invalid {prop}")
+        endpoint = (host.lower(), gw["coordinator_port"])
+        if endpoint in used_coordinators:
+            raise ValueError(f"{name}: duplicate coordinator TCP endpoint {host}:{gw['coordinator_port']}; only one Zigbee2MQTT owner allowed")
+        used_coordinators.add(endpoint)
         for prop in ("modbus_port", "z2m_ui_port"):
             port = gw[prop]
             if port in used_ports or port in (1883,):
@@ -146,6 +156,7 @@ def build(manifest, root=r"C:\Sander"):
         recovery = {
             "mqtt_host": "127.0.0.1", "mqtt_port": 1883,
             "mqtt_auth_file": str(rootw / "Config" / ("mqtt-recovery-" + gid + ".auth.json")),
+            "coordinator_transport": gw.get("coordinator_transport", "ethernet_tcp"),
             "coordinator_host": gw["coordinator_host"],
             "coordinator_port": gw["coordinator_port"],
             "z2m_host": "127.0.0.1", "z2m_port": gw["z2m_ui_port"],
