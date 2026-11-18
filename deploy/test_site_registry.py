@@ -19,6 +19,14 @@ def example():
 
 
 class SiteRegistryTests(unittest.TestCase):
+    def test_gateway_can_be_provisioned_before_any_sensors_pair(self):
+        manifest = example()
+        manifest["sensors"] = []
+        files = build(manifest)
+        self.assertEqual(json.loads(files["bridge.GW01.json"])["sensors"], [])
+        self.assertIn("device_id", files["ems-device-registration-review.csv"])
+        self.assertEqual(json.loads(files["deployment-summary.json"])["sensor_count"], 0)
+
     def test_single_gateway_generates_ems_registration_and_read_only_bridge(self):
         outputs = build(example())
         self.assertIn("bridge.GW01.json", outputs)
