@@ -3,7 +3,7 @@
 **Code status: staging candidate only.** No production server, SQL database or factory coordinator has been changed.
 
 ## Architecture: sensor/device registration at scale
-Use deploy/site-manifest.example.json as the starting inventory. Each sensor has a stable EMS device ID, IEEE address, friendly_name, exact location, gateway ID, Modbus unit ID and offline timeout. Each gateway has an approved coordinator address, unique MQTT namespace, unique Modbus port and Zigbee2MQTT UI port.
+Use deploy/site-manifest.example.json as the starting inventory. Each sensor has a stable EMS device ID, IEEE address, friendly_name, exact location, gateway ID, Modbus unit ID and offline timeout. Each gateway has an approved coordinator address, an explicit `coordinator_transport: ethernet_tcp`, unique MQTT namespace, unique Modbus port and Zigbee2MQTT UI port. **The SLZB-06MU reaches the server over standard Ethernet/PoE (RJ45 and a suitable LAN/switch), not RS-485.** Zigbee2MQTT connects to `serial.port: tcp://APPROVED_COORDINATOR_IP:6638` on the LAN. No native RS-485 coordinator mode is included; the RS-485 network for wired Modbus equipment stays a separate integration path. The coordinator's production IP remains unverified until Valen approves it.
 
 Generator deploy/site_registry.py outputs:
 - Independent bridge.<GW>.json and recovery.<GW>.json per gateway
