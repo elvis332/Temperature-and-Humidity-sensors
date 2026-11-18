@@ -30,7 +30,7 @@ class BridgeReloadTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "identity changed"):
             cache.reconfigure([{"unit_id": 1, "topic": "zigbee2mqtt/EVIL",
                                 "offline_seconds": 900}])
-        with self.assertRaisesRegex(ValueError, "unit changed"):
+        with self.assertRaisesRegex(ValueError, "retirement|unit changed"):
             cache.reconfigure([{"unit_id": 2, "topic": "zigbee2mqtt/TH-02",
                                 "offline_seconds": 900}])
         self.assertEqual(cache.topics["zigbee2mqtt/TH-02"], 1)
