@@ -35,6 +35,12 @@ class BridgeReloadTests(unittest.TestCase):
                                 "offline_seconds": 900}])
         self.assertEqual(cache.topics["zigbee2mqtt/TH-02"], 1)
 
+    def test_block_unreviewed_sensor_retirement(self):
+        cache = Cache([self.first, self.second])
+        with self.assertRaisesRegex(ValueError, "retirement"):
+            cache.reconfigure([self.first])
+        self.assertIn("zigbee2mqtt/TH-03", cache.topics)
+
     def test_refuse_duplicate_sensor_mapping(self):
         cache = Cache([self.first])
         with self.assertRaises(ValueError):
