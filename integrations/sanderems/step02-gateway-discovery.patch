@@ -1,0 +1,371 @@
+--- a/frontend/src/pages/DevicesPage.jsx
++++ b/frontend/src/pages/DevicesPage.jsx
+@@ -16,6 +16,7 @@
+ import LightingObjectsPanel from "./LightingObjectsPanel";
+ import LightingCircuitRegister from "./LightingCircuitRegister";
+ import LightingControlManager from "./LightingControlManager";
++import ZigbeeDiscoveryPanel from "./ZigbeeDiscoveryPanel";
+ 
+ const DEVICE_STATUSES = ["commissioning", "active", "maintenance", "simulation"];
+ const METER_ROLES = ["main", "submeter", "generation", "to_confirm"];
+@@ -427,7 +428,7 @@
+               <h3>{t("devices.zigbee.title")}</h3>
+             </div>
+           </div>
+-          <p className="device-note">{t("devices.zigbee.phase1Note")}</p>
++          <ZigbeeDiscoveryPanel />
+         </section>
+       ) : deviceSection === "lighting" ? (
+         <>
+--- /dev/null
++++ b/frontend/src/pages/ZigbeeDiscoveryPanel.jsx
+@@ -0,0 +1,74 @@
++import { useCallback, useEffect, useState } from "react";
++import { RefreshCw } from "lucide-react";
++
++import { getZigbeeDiscovery } from "../api";
++import { useI18n } from "../i18n";
++
++// Read-only inventory for the existing Devices page; server controls availability.
++export default function ZigbeeDiscoveryPanel() {
++  const { t } = useI18n();
++  const [snapshot, setSnapshot] = useState(null);
++  const [busy, setBusy] = useState(false);
++  const [error, setError] = useState("");
++
++  const refresh = useCallback(async () => {
++    setBusy(true);
++    setError("");
++    try {
++      setSnapshot(await getZigbeeDiscovery());
++    } catch (problem) {
++      setSnapshot(null);
++      setError(problem instanceof Error ? problem.message : String(problem));
++    } finally {
++      setBusy(false);
++    }
++  }, []);
++
++  useEffect(() => { refresh(); }, [refresh]);
++
++  return (
++    <div className="devices-zigbee-discovery">
++      <div className="devices-actions">
++        <button className="btn btn-secondary" type="button" onClick={refresh} disabled={busy}>
++          <RefreshCw size={16} /> {t("devices.zigbee.refresh")}
++        </button>
++      </div>
++      {busy && <p className="device-note" role="status">{t("devices.zigbee.loading")}</p>}
++      {error && <p className="device-note" role="alert">{t("devices.zigbee.error", { reason: error })}</p>}
++      {snapshot && !snapshot.enabled && <p className="device-note">{t("devices.zigbee.disabled")}</p>}
++      {snapshot?.enabled && snapshot.gateways.length === 0 &&
++        <p className="device-note">{t("devices.zigbee.noGateways")}</p>}
++      {snapshot?.enabled && snapshot.gateways.map((gateway) => (
++        <section key={gateway.gateway_id} className="panel" aria-label={gateway.gateway_id}>
++          <h4>{gateway.gateway_id}</h4>
++          <p className="device-note">
++            {gateway.mqtt_connected ? t("devices.zigbee.connected") : t("devices.zigbee.disconnected")}
++            {" · "}{t("devices.zigbee.state")}: {gateway.zigbee2mqtt_state}
++            {" · "}{t("devices.zigbee.sensors")}: {gateway.devices.length}
++          </p>
++          {gateway.devices.length === 0 ? (
++            <p className="device-note">{t("devices.zigbee.none")}</p>
++          ) : (
++            <div className="devices-table-wrap">
++              <table className="devices-table">
++                <thead><tr>
++                  <th>{t("devices.col.id")}</th>
++                  <th>{t("devices.zigbee.model")}</th>
++                  <th>{t("devices.zigbee.ieee")}</th>
++                </tr></thead>
++                <tbody>{gateway.devices.map((sensor) => (
++                  <tr key={sensor.ieee_address}>
++                    <td>{sensor.friendly_name || "—"}</td>
++                    <td>{sensor.model || "—"}</td>
++                    <td>{sensor.ieee_address}</td>
++                  </tr>
++                ))}</tbody>
++              </table>
++            </div>
++          )}
++        </section>
++      ))}
++      <p className="device-note">{t("devices.zigbee.snapshotNote")}</p>
++    </div>
++  );
++}
+--- a/frontend/src/messages.js
++++ b/frontend/src/messages.js
+@@ -12,6 +12,26 @@
+   "devices.zigbee.phase1Note": {
+     en: "Section ready for staging review. Gateway discovery, pairing, registration and advanced maintenance will be connected in later approved updates. No live Zigbee devices are changed in this step.",
+     zh: "此區塊已備妥供測試環境審查。閘道器搜尋、配對、註冊及進階維護將於後續核准的更新中逐步整合。本階段不會變更任何現場 Zigbee 設備。",
++  },
++  // Step 02: Read-only gateway discovery from Zigbee2MQTT
++  "devices.zigbee.refresh": { en: "Refresh gateway status", zh: "重新整理閘道器狀態" },
++  "devices.zigbee.loading": { en: "Checking gateway status…", zh: "正在確認閘道器狀態…" },
++  "devices.zigbee.disabled": {
++    en: "Zigbee discovery is not enabled on this EMS server. IT must approve and configure it before live gateway information appears.",
++    zh: "此 EMS 伺服器尚未啟用 Zigbee 搜尋功能。須經 IT 核准並完成設定後，才能顯示閘道器即時資訊。",
++  },
++  "devices.zigbee.error": { en: "Gateway status could not be loaded: {reason}", zh: "無法載入閘道器狀態：{reason}" },
++  "devices.zigbee.noGateways": { en: "No gateways configured.", zh: "尚未設定閘道器。" },
++  "devices.zigbee.connected": { en: "Broker connected", zh: "已連線至 MQTT 代理伺服器" },
++  "devices.zigbee.disconnected": { en: "Broker disconnected", zh: "未連線至 MQTT 代理伺服器" },
++  "devices.zigbee.state": { en: "Zigbee2MQTT", zh: "Zigbee2MQTT 狀態" },
++  "devices.zigbee.sensors": { en: "Discovered sensors", zh: "已搜尋到的感測器" },
++  "devices.zigbee.none": { en: "No sensors reported by this gateway yet.", zh: "此閘道器尚未回報任何感測器。" },
++  "devices.zigbee.model": { en: "Model", zh: "型號" },
++  "devices.zigbee.ieee": { en: "IEEE address", zh: "IEEE 位址" },
++  "devices.zigbee.snapshotNote": {
++    en: "Read-only Zigbee2MQTT inventory. A discovered sensor is not proof of live measurements; no pairing, configuration, or registration is performed here.",
++    zh: "此為唯讀 Zigbee2MQTT 設備清單。搜尋到感測器不代表已有即時量測資料；此頁不執行配對、設定或註冊。",
+   },
+   // ----------------------------------------------------------
+   // Shell (App.jsx)
+--- a/frontend/src/api.js
++++ b/frontend/src/api.js
+@@ -507,3 +507,8 @@
+ 
+   return filename;
+ }
++
++// Read-only admin gateway discovery; same EMS API/authentication as other Devices data.
++export function getZigbeeDiscovery() {
++  return apiGet("/admin/zigbee/discovery");
++}
+--- a/backend/app/api/router.py
++++ b/backend/app/api/router.py
+@@ -2,6 +2,7 @@
+ 
+ from backend.app.api.routes import (
+     admin_devices,
++    admin_zigbee_discovery,
+     admin_lighting_objects,
+     admin_lighting_controls,
+     admin_system,
+@@ -54,3 +55,5 @@
+ api_router.include_router(admin_system.router)
+ 
+ api_router.include_router(admin_users.router)
++
++api_router.include_router(admin_zigbee_discovery.router)
+--- /dev/null
++++ b/backend/app/api/routes/admin_zigbee_discovery.py
+@@ -0,0 +1,102 @@
++"""Read-only Zigbee2MQTT discovery for the existing EMS Devices page.
++
++This does not pair, register or configure any device. Nothing connects at API startup;
++IT must explicitly enable discovery and configure a validated gateway manifest.
++"""
++import json
++import os
++import re
++import threading
++from ipaddress import ip_address
++from pathlib import Path
++
++from fastapi import APIRouter, Depends, HTTPException
++
++from backend.app.api.dependencies import require_admin
++from backend.app.zigbee.discovery import Observer, ObserverError
++
++router = APIRouter(prefix="/admin/zigbee", tags=["Zigbee discovery"],
++                   dependencies=[Depends(require_admin)])
++_lock = threading.RLock()
++_observers = {}
++_gateway_identity = {}
++_IDENT = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
++
++
++def _load_gateways():
++    path = Path(os.getenv("EMS_ZIGBEE_MANIFEST", "C:/Sander/Config/site-manifest.json"))
++    try:
++        data = json.loads(path.read_text(encoding="utf-8-sig"))
++        gateways = data["gateways"]
++        if not isinstance(gateways, list) or len(gateways) > 25:
++            raise ValueError("Invalid gateway list")
++        seen_ids, seen_topics = set(), set()
++        for item in gateways:
++            if not isinstance(item, dict):
++                raise ValueError("Invalid gateway")
++            gid, topic, host = (item.get("id"), item.get("mqtt_base_topic"),
++                                item.get("coordinator_host"))
++            if not isinstance(gid, str) or not _IDENT.fullmatch(gid) or gid in seen_ids:
++                raise ValueError("Invalid gateway id")
++            if not isinstance(topic, str) or not _IDENT.fullmatch(topic) or topic in seen_topics:
++                raise ValueError("Invalid MQTT topic")
++            if not isinstance(host, str):
++                raise ValueError("Invalid gateway address")
++            addr = ip_address(host)
++            if addr.version != 4 or not addr.is_private or addr.is_loopback or addr.is_unspecified:
++                raise ValueError("Invalid gateway address")
++            port = item.get("coordinator_port")
++            if not isinstance(port, int) or not 1 <= port <= 65535:
++                raise ValueError("Invalid gateway TCP port")
++            if item.get("coordinator_transport", "ethernet_tcp") != "ethernet_tcp":
++                raise ValueError("Unsupported coordinator transport")
++            seen_ids.add(gid)
++            seen_topics.add(topic)
++        return gateways
++    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
++        raise HTTPException(status_code=503,
++                            detail="Zigbee gateway manifest is unavailable or invalid") from None
++
++
++def _observer_for(gateway):
++    gid = gateway["id"]
++    identity = (gateway["mqtt_base_topic"], gateway["coordinator_host"],
++                gateway.get("coordinator_port", 6638))
++    with _lock:
++        if gid in _observers:
++            if _gateway_identity[gid] != identity:
++                raise HTTPException(status_code=409,
++                                    detail="Gateway configuration changed; administrator restart required")
++            return _observers[gid]
++        # Keep discovery strictly on the local server's MQTT broker.
++        broker = os.getenv("EMS_ZIGBEE_MQTT_HOST", "127.0.0.1")
++        if broker not in {"127.0.0.1", "localhost", "::1"}:
++            raise HTTPException(status_code=503, detail="MQTT must use the local EMS broker")
++        try:
++            port = int(os.getenv("EMS_ZIGBEE_MQTT_PORT", "1883"))
++            if not 1 <= port <= 65535:
++                raise ValueError("Invalid port")
++            credentials = os.getenv("EMS_ZIGBEE_MQTT_CREDENTIALS_FILE") or None
++            observer = Observer(gateway, broker, port, credentials_file=credentials)
++            observer.start()
++        except (ObserverError, OSError, ValueError, RuntimeError):
++            raise HTTPException(status_code=503,
++                                detail="Zigbee MQTT observer unavailable") from None
++        _observers[gid] = observer
++        _gateway_identity[gid] = identity
++        return observer
++
++
++@router.get("/discovery")
++def discovery():
++    if os.getenv("EMS_ZIGBEE_DISCOVERY_ENABLED", "false").lower() not in {"true", "yes", "1"}:
++        return {"enabled": False, "gateways": []}
++    gateways = []
++    for gateway in _load_gateways():
++        observer = _observer_for(gateway)
++        state = observer.status()
++        gateways.append({"gateway_id": gateway["id"],
++                         "mqtt_connected": state["mqtt_connected"],
++                         "zigbee2mqtt_state": state["zigbee2mqtt_state"],
++                         "devices": observer.discovered()})
++    return {"enabled": True, "gateways": gateways}
+--- /dev/null
++++ b/backend/app/zigbee/discovery.py
+@@ -0,0 +1,102 @@
++"""MQTT management observer. Not a Zigbee network coordinator or EMS collector.
++
++Sensor telemetry continues in the separately installed Zigbee2MQTT/bridge services.
++Never connect unless the Zigbee integration is explicitly enabled.
++"""
++import json
++import os
++import threading
++from pathlib import Path
++
++
++class ObserverError(Exception):
++    pass
++
++
++class Observer:
++    def __init__(self, gateway, broker, port, credentials_file=None, client_factory=None):
++        self.gateway = gateway
++        self.prefix = gateway["mqtt_base_topic"]
++        self.connected = False
++        self.state = "offline"
++        self.devices = {}
++        self.lock = threading.RLock()
++        self.client = None
++        self.broker, self.port = broker, port
++        self.credentials_file = credentials_file
++        self.client_factory = client_factory
++
++    def start(self):
++        if self.client is not None:
++            return
++        try:
++            import paho.mqtt.client as mqtt
++        except ImportError as exc:
++            raise ObserverError("paho-mqtt missing; ask IT to install verified offline wheel") from exc
++        factory = self.client_factory or mqtt.Client
++        client = factory(mqtt.CallbackAPIVersion.VERSION2,
++                         client_id="sander-ems-" + self.gateway["id"])
++        if self.credentials_file:
++            values = json.loads(Path(self.credentials_file).read_text(encoding="utf-8"))
++            if not values.get("username") or not values.get("password"):
++                raise ObserverError("Invalid protected MQTT credentials")
++            client.username_pw_set(values["username"], values["password"])
++        client.on_connect = self._on_connect
++        client.on_disconnect = self._on_disconnect
++        client.on_message = self._on_message
++        client.connect_async(self.broker, self.port, 30)
++        client.loop_start()
++        self.client = client
++
++    def close(self):
++        if self.client:
++            self.client.disconnect()
++            self.client.loop_stop()
++            self.client = None
++        with self.lock:
++            self.connected = False
++            self.state = "offline"
++
++    def _on_connect(self, client, userdata, flags, reason, props):
++        if reason.is_failure:
++            return
++        with self.lock:
++            self.connected = True
++        client.subscribe([(self.prefix + "/bridge/" + part, 1) for part in
++                          ("devices", "state")])
++
++    def _on_disconnect(self, client, userdata, flags, reason, props):
++        with self.lock:
++            self.connected = False
++            self.state = "offline"
++
++    def _on_message(self, client, userdata, message):
++        try:
++            raw = message.payload.decode("utf-8")
++            value = json.loads(raw)
++        except (UnicodeError, ValueError):
++            if message.topic != self.prefix + "/bridge/state":
++                return
++            value = raw
++        with self.lock:
++            if message.topic == self.prefix + "/bridge/devices" and isinstance(value, list):
++                self.devices = {d["ieee_address"].lower(): d for d in value
++                                if isinstance(d, dict) and isinstance(d.get("ieee_address"), str)}
++            elif message.topic == self.prefix + "/bridge/state":
++                self.state = value.get("state", "offline") if isinstance(value, dict) else str(value)
++
++    def status(self):
++        with self.lock:
++            return {"gateway_id": self.gateway["id"], "mqtt_connected": self.connected,
++                    "zigbee2mqtt_state": self.state, "device_count": len(self.devices),
++                    "coordinator_host": self.gateway["coordinator_host"],
++                    "coordinator_port": self.gateway["coordinator_port"]}
++
++    def discovered(self):
++        with self.lock:
++            return [{"ieee_address": ieee,
++                     "friendly_name": v.get("friendly_name") if isinstance(v.get("friendly_name"), str) else "",
++                     "model": ((v.get("definition") if isinstance(v.get("definition"), dict) else {})
++                               .get("model") or v.get("model_id") or "")}
++                    for ieee, v in sorted(self.devices.items())][:256]
++
+--- a/requirements-verified.txt
++++ b/requirements-verified.txt
+@@ -13,3 +13,6 @@
+ uvicorn[standard]>=0.30
+ 
+ XlsxWriter>=3.2
++
++# Optional: Zigbee2MQTT read-only MQTT discovery (IT-approved environment only)
++paho-mqtt>=2.0,<3.0
