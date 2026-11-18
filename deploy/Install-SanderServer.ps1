@@ -78,7 +78,7 @@ try {
 foreach ($gw in $site.gateways) {
     $gid=$gw.id
     if (-not (TestPort $gw.coordinator_host $gw.coordinator_port)) { throw "Coordinator $gid is not reachable from this server; no changes made" }
-    foreach ($role in @("bridge","recovery")) {
+    foreach ($role in @("bridge","recovery","admin")) {
         CheckPrivateFile (Join-Path $Root ("Config\mqtt-" + $role + "-" + $gid + ".auth.json"))
     }
     $zservice="SanderZ2M" + $gid
