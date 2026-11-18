@@ -83,7 +83,12 @@ def create_admin_router(
     def _audit(name: str, principal, **detail):
         # Fail closed if audit pipeline fails. No sensitive MQTT payloads included.
         try:
-            audit_change({"action": name, "actor": _actor(principal), **detail})
+            result = audit_change({"action": name, "actor": _actor(principal), **detail})
+            import inspect
+            if inspect.isawaitable(result):
+                if hasattr(result, "close"):
+                    result.close()
+                raise RuntimeError("Sync-only EMS audit adapter required; async audit would not persist")
         except Exception as exc:
             raise HTTPException(status_code=503, detail="EMS audit subsystem unavailable") from exc
 
@@ -187,6 +192,11 @@ def create_admin_router(
                 # The injected adapter must commit EMS Devices DB AND protected
                 # gateway bridge file, with rollback/identity checks. Never raw SQL here.
                 result = register_transaction(plan, principal)
+                import inspect
+                if inspect.isawaitable(result):
+                    if hasattr(result, "close"):
+                        result.close()
+                    raise RuntimeError("Sync-only EMS registration adapter required")
                 if not isinstance(result, dict) or result.get("committed") is not True:
                     raise ValueError("Registration adapter did not confirm committed transaction")
                 fleet.apply_committed_plan(plan)
