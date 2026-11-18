@@ -1,0 +1,64 @@
+# SONOFF SNZB-02D reported through the Sander Zigbee2MQTT -> Modbus bridge.
+# Unique sensor IDs, IEEE addresses and Modbus unit assignments are controlled
+# by the gateway site registry and Devices registration workflow.
+profile:
+  id: SNZB02D
+  manufacturer: SONOFF
+  model: SNZB-02D
+  device_type: environment_sensor
+  communication_mode: modbus_tcp
+  description: Zigbee2MQTT environmental sensor read-only Modbus bridge.
+points:
+  - key: temperature_c
+    display_name: Temperature
+    display_name_zh: 溫度
+    short_name: Temp
+    unit: °C
+    data_type: float
+    category: environmental
+    enabled: true
+    required: true
+    writable: false
+    status: confirmed
+    validation: {min: -40, max: 80}
+    source: {simulation: false, register_address: 0, register_type: int16, function_code: 3, scale: 0.1, block_start: 0, block_length: 4}
+  - key: humidity_pct
+    display_name: Relative Humidity
+    display_name_zh: 相對濕度
+    short_name: Humidity
+    unit: '%RH'
+    data_type: float
+    category: environmental
+    enabled: true
+    required: true
+    writable: false
+    status: confirmed
+    validation: {min: 0, max: 100}
+    source: {simulation: false, register_address: 1, register_type: uint16, function_code: 3, scale: 0.1, block_start: 0, block_length: 4}
+  - key: battery_pct
+    display_name: Battery
+    display_name_zh: 電池
+    short_name: Battery
+    unit: '%'
+    data_type: float
+    category: environmental
+    enabled: true
+    required: false
+    writable: false
+    status: confirmed
+    validation: {min: 0, max: 100}
+    alarm: {min: 20}
+    source: {simulation: false, register_address: 2, register_type: uint16, function_code: 3, scale: 1, block_start: 0, block_length: 4}
+  - key: lqi
+    display_name: Link Quality
+    display_name_zh: 訊號品質
+    short_name: LQI
+    unit: ''
+    data_type: float
+    category: diagnostics
+    enabled: true
+    required: false
+    writable: false
+    status: confirmed
+    validation: {min: 0, max: 255}
+    source: {simulation: false, register_address: 3, register_type: uint16, function_code: 3, scale: 1, block_start: 0, block_length: 4}

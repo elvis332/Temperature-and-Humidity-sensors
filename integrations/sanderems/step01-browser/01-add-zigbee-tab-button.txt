@@ -1,0 +1,8 @@
+          <button
+            type="button"
+            className={`btn ${deviceSection === "zigbee" ? "btn-primary" : "btn-secondary"}`}
+            aria-pressed={deviceSection === "zigbee"}
+            onClick={() => setDeviceSection("zigbee")}
+          >
+            {t("devices.category.zigbee")}
+          </button>

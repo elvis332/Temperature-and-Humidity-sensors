@@ -1,0 +1,49 @@
+--- a/frontend/src/pages/DevicesPage.jsx
++++ b/frontend/src/pages/DevicesPage.jsx
+@@ -408,10 +408,28 @@
+           >
+             {t("devices.category.lighting")}
+           </button>
++          <button
++            type="button"
++            className={`btn ${deviceSection === "zigbee" ? "btn-primary" : "btn-secondary"}`}
++            aria-pressed={deviceSection === "zigbee"}
++            onClick={() => setDeviceSection("zigbee")}
++          >
++            {t("devices.category.zigbee")}
++          </button>
+         </div>
+       </nav>
+ 
+-      {deviceSection === "lighting" ? (
++      {deviceSection === "zigbee" ? (
++        <section className="panel" aria-label={t("devices.zigbee.title")}>
++          <div className="devices-head">
++            <div>
++              <p className="eyebrow">{t("devices.zigbee.eyebrow")}</p>
++              <h3>{t("devices.zigbee.title")}</h3>
++            </div>
++          </div>
++          <p className="device-note">{t("devices.zigbee.phase1Note")}</p>
++        </section>
++      ) : deviceSection === "lighting" ? (
+         <>
+           <LightingCircuitRegister />
+           <LightingControlManager />
+--- a/frontend/src/messages.js
++++ b/frontend/src/messages.js
+@@ -5,6 +5,14 @@
+ // {name} placeholders are filled by t(key, { name: ... }).
+ 
+ export const MESSAGES = {
++  // Step 01: Zigbee Devices navigation (existing EMS i18n system; no device writes)
++  "devices.category.zigbee": { en: "Zigbee Sensors", zh: "Zigbee 感測器" },
++  "devices.zigbee.eyebrow": { en: "DEVICE MANAGEMENT", zh: "設備管理" },
++  "devices.zigbee.title": { en: "Zigbee Gateways & Sensors", zh: "Zigbee 閘道器與感測器" },
++  "devices.zigbee.phase1Note": {
++    en: "Section ready for staging review. Gateway discovery, pairing, registration and advanced maintenance will be connected in later approved updates. No live Zigbee devices are changed in this step.",
++    zh: "此區塊已備妥供測試環境審查。閘道器搜尋、配對、註冊及進階維護將於後續核准的更新中逐步整合。本階段不會變更任何現場 Zigbee 設備。",
++  },
+   // ----------------------------------------------------------
+   // Shell (App.jsx)
+   // ----------------------------------------------------------

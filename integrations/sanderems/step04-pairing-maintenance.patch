@@ -1,0 +1,600 @@
+--- a/backend/app/api/routes/admin_zigbee_discovery.py
++++ b/backend/app/api/routes/admin_zigbee_discovery.py
+@@ -100,3 +100,75 @@
+                          "zigbee2mqtt_state": state["zigbee2mqtt_state"],
+                          "devices": observer.discovered()})
+     return {"enabled": True, "gateways": gateways}
++
++# Narrow maintenance interface: administrator, trusted browser origin,
++# IT feature flags, durable audit and correlated Zigbee2MQTT acknowledgement.
++from typing import Literal
++from pydantic import BaseModel, ConfigDict, Field
++from fastapi import Request
++from backend.app.zigbee.maintenance import (
++    enforce_admin_write, maintenance_state, validate_option, execute_audited,
++)
++
++
++class PairAction(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++    seconds: Literal[0, 60]
++    confirmation: str = Field(max_length=50)
++
++
++class DeviceOptionAction(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++    ieee_address: str = Field(pattern=r"^0x[0-9a-fA-F]{16}$")
++    key: Literal["temperature_calibration", "humidity_calibration"]
++    value: float
++    confirmation: str = Field(max_length=18)
++
++
++def _online_gateway(gateway_id):
++    if os.getenv("EMS_ZIGBEE_DISCOVERY_ENABLED", "false").lower() not in {"true", "yes", "1"}:
++        raise HTTPException(503, "Zigbee discovery is disabled")
++    gateway = next((g for g in _load_gateways() if g["id"] == gateway_id), None)
++    if not gateway:
++        raise HTTPException(404, "Unknown Zigbee gateway")
++    observer = _observer_for(gateway)
++    status = observer.status()
++    if not status["mqtt_connected"] or status["zigbee2mqtt_state"] != "online":
++        raise HTTPException(503, "Gateway Zigbee2MQTT is not online")
++    return observer
++
++
++@router.get("/maintenance")
++def maintenance_status():
++    return maintenance_state()
++
++
++@router.post("/gateways/{gateway_id}/pair")
++def pair_gateway(gateway_id: str, body: PairAction, request: Request, user=Depends(require_admin)):
++    enforce_admin_write(request)
++    if body.confirmation != gateway_id:
++        raise HTTPException(422, "Confirm the exact gateway ID")
++    observer = _online_gateway(gateway_id)
++    action = "pair_60s" if body.seconds == 60 else "pair_stop"
++    return execute_audited(observer, user.username, gateway_id, action,
++                           {"seconds": body.seconds}, "permit_join", {"time": body.seconds})
++
++
++@router.post("/gateways/{gateway_id}/device-options")
++def change_device_option(gateway_id: str, body: DeviceOptionAction,
++                         request: Request, user=Depends(require_admin)):
++    enforce_admin_write(request, settings=True)
++    observer = _online_gateway(gateway_id)
++    ieee = body.ieee_address.lower()
++    if body.confirmation.lower() != ieee:
++        raise HTTPException(422, "Confirm the exact sensor IEEE address")
++    if not any(d["ieee_address"].lower() == ieee and d["model"] == "SNZB-02D"
++               for d in observer.discovered()):
++        raise HTTPException(409, "Only discovered SNZB-02D sensors can be configured")
++    try:
++        value = validate_option(body.key, body.value)
++    except ValueError as exc:
++        raise HTTPException(422, str(exc)) from exc
++    return execute_audited(observer, user.username, gateway_id, "sensor_option",
++                           {"ieee": ieee, "setting": body.key, "value": value},
++                           "device/options", {"id": ieee, "options": {body.key: value}})
+--- a/backend/app/zigbee/discovery.py
++++ b/backend/app/zigbee/discovery.py
+@@ -6,6 +6,7 @@
+ import json
+ import os
+ import threading
++import uuid
+ from pathlib import Path
+ 
+ 
+@@ -25,6 +26,7 @@
+         self.broker, self.port = broker, port
+         self.credentials_file = credentials_file
+         self.client_factory = client_factory
++        self.pending = {}
+ 
+     def start(self):
+         if self.client is not None:
+@@ -63,7 +65,7 @@
+         with self.lock:
+             self.connected = True
+         client.subscribe([(self.prefix + "/bridge/" + part, 1) for part in
+-                          ("devices", "state")])
++                          ("devices", "state", "response/permit_join", "response/device/options")])
+ 
+     def _on_disconnect(self, client, userdata, flags, reason, props):
+         with self.lock:
+@@ -79,6 +81,15 @@
+                 return
+             value = raw
+         with self.lock:
++            if message.topic.startswith(self.prefix + "/bridge/response/") and isinstance(value, dict):
++                transaction = value.get("transaction")
++                waiter = self.pending.get(transaction)
++                if waiter is not None:
++                    event, topic, result = waiter
++                    if message.topic == topic:
++                        result.update(value)
++                        event.set()
++                return
+             if message.topic == self.prefix + "/bridge/devices" and isinstance(value, list):
+                 self.devices = {d["ieee_address"].lower(): d for d in value
+                                 if isinstance(d, dict) and isinstance(d.get("ieee_address"), str)}
+@@ -100,3 +111,27 @@
+                                .get("model") or v.get("model_id") or "")}
+                     for ieee, v in sorted(self.devices.items())][:256]
+ 
++
++    def request(self, operation, payload, timeout=8):
++        if operation not in {"permit_join", "device/options"}:
++            raise ObserverError("Unsupported Zigbee maintenance operation")
++        with self.lock:
++            if not self.connected or self.state != "online" or not self.client:
++                raise ObserverError("Gateway MQTT observer is offline")
++            transaction = uuid.uuid4().hex
++            event = threading.Event()
++            result = {}
++            topic = f"{self.prefix}/bridge/response/{operation}"
++            self.pending[transaction] = (event, topic, result)
++            client = self.client
++        try:
++            body = json.dumps({**payload, "transaction": transaction}, separators=(",", ":"))
++            publication = client.publish(f"{self.prefix}/bridge/request/{operation}", body, qos=1, retain=False)
++            if publication.rc != 0:
++                raise ObserverError("MQTT publish failed")
++            if not event.wait(timeout):
++                raise ObserverError("Gateway response timed out; result may be uncertain")
++            return result.copy()
++        finally:
++            with self.lock:
++                self.pending.pop(transaction, None)
+--- a/backend/app/zigbee/maintenance.py
++++ b/backend/app/zigbee/maintenance.py
+@@ -0,0 +1,100 @@
++"""Restricted, audited Zigbee2MQTT maintenance. Disabled by default."""
++
++import json
++import math
++import os
++import threading
++import uuid
++from datetime import datetime, timezone
++from pathlib import Path
++
++from fastapi import HTTPException, Request
++
++ALLOWED_OPTIONS = {
++    "temperature_calibration": (-50, 50),
++    "humidity_calibration": (-50, 50),
++}
++PAIR_SECONDS = 60
++_GATEWAY_LOCK = threading.RLock()
++
++
++def maintenance_state():
++    enabled = os.getenv("EMS_ZIGBEE_MAINTENANCE_ENABLED", "false").lower() == "true"
++    audit_path = os.getenv("EMS_ZIGBEE_MAINTENANCE_AUDIT_PATH", "")
++    origins = {x.strip().rstrip("/") for x in os.getenv("EMS_ZIGBEE_WRITE_ORIGINS", "").split(",") if x.strip()}
++    return {
++        "enabled": enabled and bool(audit_path) and bool(origins),
++        "settings_enabled": os.getenv("EMS_ZIGBEE_DEVICE_OPTIONS_ENABLED", "false").lower() == "true",
++        "pair_seconds": PAIR_SECONDS,
++        "allowed_settings": sorted(ALLOWED_OPTIONS),
++    }
++
++
++def enforce_admin_write(request: Request, *, settings=False):
++    state = maintenance_state()
++    if not state["enabled"] or (settings and not state["settings_enabled"]):
++        raise HTTPException(503, "Zigbee maintenance is disabled pending IT approval")
++    allowed = {x.strip().rstrip("/") for x in os.getenv("EMS_ZIGBEE_WRITE_ORIGINS", "").split(",") if x.strip()}
++    origin = request.headers.get("origin", "").rstrip("/")
++    if not origin or origin not in allowed:
++        raise HTTPException(403, "Untrusted browser origin for Zigbee maintenance")
++
++
++def validate_option(option, value):
++    if option not in ALLOWED_OPTIONS or isinstance(value, bool) or not isinstance(value, (int, float)):
++        raise ValueError("Unsupported device setting or value")
++    value = float(value)
++    lower, upper = ALLOWED_OPTIONS[option]
++    if not math.isfinite(value) or not lower <= value <= upper:
++        raise ValueError("Device setting is outside its allowed range")
++    return value
++
++
++def audit_event(user, gateway, action, detail, status, event_id=None):
++    """Durable append-only-by-convention record; fails closed without writable audit path."""
++    path_text = os.getenv("EMS_ZIGBEE_MAINTENANCE_AUDIT_PATH", "")
++    path = Path(path_text)
++    if not path_text or not path.is_absolute() or path.is_symlink() or not path.parent.is_dir():
++        raise OSError("Protected Zigbee audit file has not been configured")
++    record = {
++        "event_id": event_id or uuid.uuid4().hex,
++        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
++        "user": user,
++        "gateway": gateway,
++        "action": action,
++        "details": detail,
++        "status": status,
++    }
++    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
++    line = (json.dumps(record, ensure_ascii=True, separators=(",", ":")) + "\n").encode("utf-8")
++    fd = os.open(path, flags, 0o600)
++    try:
++        os.write(fd, line)
++        os.fsync(fd)
++    finally:
++        os.close(fd)
++    return record["event_id"]
++
++
++def execute_audited(observer, user, gateway, action, details, operation, payload):
++    """Serializes commands and persists the intent before the MQTT publish."""
++    with _GATEWAY_LOCK:
++        try:
++            event_id = audit_event(user, gateway, action, details, "requested")
++        except OSError as exc:
++            raise HTTPException(503, "Zigbee audit logging unavailable; command not sent") from exc
++        try:
++            response = observer.request(operation, payload)
++            outcome = "acknowledged" if response.get("status") == "ok" else "rejected"
++            error = None if outcome == "acknowledged" else "Zigbee2MQTT rejected the command"
++        except Exception as exc:
++            response = None
++            outcome = "uncertain"
++            error = "Command status uncertain; check gateway before retrying"
++        try:
++            audit_event(user, gateway, action, details, outcome, event_id)
++        except OSError as exc:
++            raise HTTPException(503, "Zigbee audit result unavailable; check gateway state") from exc
++        if error:
++            raise HTTPException(504 if outcome == "uncertain" else 502, error)
++        return {"accepted": True, "event_id": event_id, "gateway_id": gateway}
+--- a/frontend/src/api.js
++++ b/frontend/src/api.js
+@@ -512,3 +512,24 @@
+ export function getZigbeeDiscovery() {
+   return apiGet("/admin/zigbee/discovery");
+ }
++
++
++export function getZigbeeMaintenance() {
++  return apiGet("/admin/zigbee/maintenance");
++}
++
++export function setZigbeePairing(gatewayId, seconds) {
++  return apiPost(`/admin/zigbee/gateways/${encodeURIComponent(gatewayId)}/pair`, {
++    seconds,
++    confirmation: gatewayId,
++  });
++}
++
++export function setZigbeeDeviceOption(gatewayId, ieeeAddress, key, value) {
++  return apiPost(`/admin/zigbee/gateways/${encodeURIComponent(gatewayId)}/device-options`, {
++    ieee_address: ieeeAddress,
++    key,
++    value,
++    confirmation: ieeeAddress,
++  });
++}
+--- a/frontend/src/messages.js
++++ b/frontend/src/messages.js
+@@ -60,6 +60,38 @@
+     en: "{id} registered in commissioning with collection OFF. Enable collection only after bridge and readings are verified.",
+     zh: "{id} 已以待驗收狀態註冊，採集維持關閉。確認橋接器與讀值後方可啟用採集。",
+   },
++  // Step 04: Administrator-controlled Zigbee maintenance
++  "devices.zigbee.maintenanceTitle": { en: "Advanced Maintenance", zh: "進階維護" },
++  "devices.zigbee.maintenanceWarning": {
++    en: "Administrator only. Actions change Zigbee2MQTT state and are audited. Device collection, factory lighting and other EMS controls are not affected.",
++    zh: "僅限管理員操作。這些動作會變更 Zigbee2MQTT 狀態，且會記錄稽核紀錄。不影響設備資料採集、廠區照明或其他 EMS 控制。",
++  },
++  "devices.zigbee.maintenanceDisabled": {
++    en: "Maintenance is locked until IT enables the server feature, trusted browser origins and protected audit log.",
++    zh: "維護功能已鎖定，須經 IT 啟用伺服器功能、信任的瀏覽器來源及受保護的稽核紀錄。",
++  },
++  "devices.zigbee.maintenanceError": { en: "Maintenance failed: {reason}", zh: "維護操作失敗：{reason}" },
++  "devices.zigbee.openPairing": { en: "Allow pairing for 60 seconds", zh: "允許配對 60 秒" },
++  "devices.zigbee.closePairing": { en: "Close pairing", zh: "關閉配對" },
++  "devices.zigbee.pairingInfo": {
++    en: "Pair only approved devices. Open pairing briefly, then hold the sensor pairing button for 5 seconds. Confirm the newly discovered IEEE address before registration.",
++    zh: "僅配對已核准的設備。短暫開啟配對後，長按感測器配對鍵 5 秒。註冊前請確認新設備的 IEEE 位址。",
++  },
++  "devices.zigbee.pairConfirm": { en: "Allow new Zigbee devices to join {gateway} for 60 seconds?", zh: "確定允許新 Zigbee 設備在 60 秒內加入 {gateway}？" },
++  "devices.zigbee.stopConfirm": { en: "Close Zigbee pairing on {gateway} now?", zh: "確定立即關閉 {gateway} 的 Zigbee 配對？" },
++  "devices.zigbee.pairAcknowledged": { en: "Zigbee2MQTT acknowledged the 60-second pairing window. Refresh the sensor list after pairing.", zh: "Zigbee2MQTT 已確認開啟 60 秒配對視窗。配對後請重新整理感測器清單。" },
++  "devices.zigbee.stopAcknowledged": { en: "Zigbee2MQTT acknowledged the pairing close request.", zh: "Zigbee2MQTT 已確認關閉配對的要求。" },
++  "devices.zigbee.calibrationTitle": { en: "Sensor calibration", zh: "感測器校正" },
++  "devices.zigbee.calibrationDisabled": { en: "Calibration changes require separate IT approval.", zh: "校正值修改需要另外取得 IT 核准。" },
++  "devices.zigbee.chooseSensor": { en: "Select an SNZB-02D sensor", zh: "選擇 SNZB-02D 感測器" },
++  "devices.zigbee.setting": { en: "Setting", zh: "設定項目" },
++  "devices.zigbee.setting.temperature_calibration": { en: "Temperature calibration (°C)", zh: "溫度校正（°C）" },
++  "devices.zigbee.setting.humidity_calibration": { en: "Humidity calibration (%)", zh: "濕度校正（%）" },
++  "devices.zigbee.calibrationValue": { en: "Offset (−50 to +50)", zh: "偏移量（−50 至 +50）" },
++  "devices.zigbee.applyCalibration": { en: "Apply calibration", zh: "套用校正" },
++  "devices.zigbee.calibrationInvalid": { en: "Calibration must be a finite number between −50 and +50.", zh: "校正值必須為 −50 至 +50 之間的有限數字。" },
++  "devices.zigbee.calibrationConfirm": { en: "Change calibration for sensor {ieee}? This can affect reported values.", zh: "確定修改感測器 {ieee} 的校正值？此操作可能影響回報讀值。" },
++  "devices.zigbee.calibrationAcknowledged": { en: "Zigbee2MQTT acknowledged the setting. Verify the next sensor reading.", zh: "Zigbee2MQTT 已確認該設定。請核對感測器下一筆讀值。" },
+   // ----------------------------------------------------------
+   // Shell (App.jsx)
+   // ----------------------------------------------------------
+--- a/frontend/src/pages/ZigbeeDiscoveryPanel.jsx
++++ b/frontend/src/pages/ZigbeeDiscoveryPanel.jsx
+@@ -3,6 +3,7 @@
+ 
+ import { createAdminDevice, getAdminDevices, getAdminProfiles, getZigbeeDiscovery } from "../api";
+ import { useI18n } from "../i18n";
++import ZigbeeMaintenancePanel from "./ZigbeeMaintenancePanel";
+ 
+ const SUPPORTED_MODEL = "SNZB-02D";
+ const IEEE_PATTERN = /^0x[0-9a-f]{16}$/i;
+@@ -184,6 +185,13 @@
+               </table>
+             </div>
+           )}
++          <ZigbeeMaintenancePanel
++            key={gateway.gateway_id}
++            gatewayId={gateway.gateway_id}
++            online={gateway.mqtt_connected && gateway.zigbee2mqtt_state === "online"}
++            devices={gateway.devices}
++            onRefresh={refresh}
++          />
+           {draft?.gatewayId === gateway.gateway_id && (
+             <form onSubmit={register} className="panel">
+               <h4>{t("devices.zigbee.registrationTitle")}</h4>
+--- a/frontend/src/pages/ZigbeeMaintenancePanel.jsx
++++ b/frontend/src/pages/ZigbeeMaintenancePanel.jsx
+@@ -0,0 +1,98 @@
++import { useEffect, useState } from "react";
++import { getZigbeeMaintenance, setZigbeePairing, setZigbeeDeviceOption } from "../api";
++import { useI18n } from "../i18n";
++
++const CALIBRATIONS = ["temperature_calibration", "humidity_calibration"];
++
++export default function ZigbeeMaintenancePanel({ gatewayId, online, devices, onRefresh }) {
++  const { t } = useI18n();
++  const [capabilities, setCapabilities] = useState(null);
++  const [busy, setBusy] = useState(false);
++  const [error, setError] = useState("");
++  const [notice, setNotice] = useState("");
++  const [ieee, setIeee] = useState("");
++  const [key, setKey] = useState(CALIBRATIONS[0]);
++  const [value, setValue] = useState("0");
++  const sensors = devices.filter((d) => d.model === "SNZB-02D" && /^0x[0-9a-f]{16}$/i.test(d.ieee_address));
++
++  useEffect(() => {
++    let active = true;
++    getZigbeeMaintenance().then((data) => { if (active) setCapabilities(data); })
++      .catch((problem) => { if (active) setError(String(problem?.message || problem)); });
++    return () => { active = false; };
++  }, []);
++
++  async function pair(seconds) {
++    if (busy || !online || !capabilities?.enabled) return;
++    if (!window.confirm(t(seconds === 60 ? "devices.zigbee.pairConfirm" : "devices.zigbee.stopConfirm", { gateway: gatewayId }))) return;
++    setBusy(true); setError(""); setNotice("");
++    try {
++      await setZigbeePairing(gatewayId, seconds);
++      setNotice(t(seconds === 60 ? "devices.zigbee.pairAcknowledged" : "devices.zigbee.stopAcknowledged"));
++      await onRefresh();
++    } catch (problem) {
++      setError(String(problem?.message || problem));
++    } finally { setBusy(false); }
++  }
++
++  async function submitSetting(event) {
++    event.preventDefault();
++    if (busy || !online || !capabilities?.enabled || !capabilities?.settings_enabled ||
++        !sensors.some((s) => s.ieee_address === ieee) || !CALIBRATIONS.includes(key) || value.trim() === "") return;
++    const number = Number(value);
++    if (!Number.isFinite(number) || number < -50 || number > 50) {
++      setError(t("devices.zigbee.calibrationInvalid")); return;
++    }
++    if (!window.confirm(t("devices.zigbee.calibrationConfirm", { ieee }))) return;
++    setBusy(true); setError(""); setNotice("");
++    try {
++      await setZigbeeDeviceOption(gatewayId, ieee, key, number);
++      setNotice(t("devices.zigbee.calibrationAcknowledged"));
++      await onRefresh();
++    } catch (problem) { setError(String(problem?.message || problem)); }
++    finally { setBusy(false); }
++  }
++
++  return (
++    <div className="panel" aria-label={t("devices.zigbee.maintenanceTitle")}>
++      <h4>{t("devices.zigbee.maintenanceTitle")}</h4>
++      <p className="device-note">{t("devices.zigbee.maintenanceWarning")}</p>
++      {error && <p className="device-note" role="alert">{t("devices.zigbee.maintenanceError", { reason: error })}</p>}
++      {notice && <p className="device-note" role="status">{notice}</p>}
++      {!capabilities?.enabled && <p className="device-note">{t("devices.zigbee.maintenanceDisabled")}</p>}
++      <div className="devices-actions">
++        <button className="btn btn-secondary" type="button" disabled={busy || !online || !capabilities?.enabled}
++          onClick={() => pair(60)}>{t("devices.zigbee.openPairing")}</button>
++        <button className="btn btn-secondary" type="button" disabled={busy || !online || !capabilities?.enabled}
++          onClick={() => pair(0)}>{t("devices.zigbee.closePairing")}</button>
++      </div>
++      <p className="device-note">{t("devices.zigbee.pairingInfo")}</p>
++      <h4>{t("devices.zigbee.calibrationTitle")}</h4>
++      {!capabilities?.settings_enabled && <p className="device-note">{t("devices.zigbee.calibrationDisabled")}</p>}
++      <form onSubmit={submitSetting}>
++        <div className="device-grid">
++          <label className="device-field"><span>{t("devices.zigbee.ieee")}</span>
++            <select value={ieee} required onChange={(event) => setIeee(event.target.value)}>
++              <option value="">{t("devices.zigbee.chooseSensor")}</option>
++              {sensors.map((sensor) => <option key={sensor.ieee_address} value={sensor.ieee_address}>
++                {sensor.friendly_name} ({sensor.ieee_address})
++              </option>)}
++            </select></label>
++          <label className="device-field"><span>{t("devices.zigbee.setting")}</span>
++            <select value={key} onChange={(event) => setKey(event.target.value)}>
++              {CALIBRATIONS.map((option) => <option key={option} value={option}>
++                {t(`devices.zigbee.setting.${option}`)}
++              </option>)}
++            </select></label>
++          <label className="device-field"><span>{t("devices.zigbee.calibrationValue")}</span>
++            <input type="number" min="-50" max="50" step="0.1" required value={value}
++              onChange={(event) => setValue(event.target.value)} /></label>
++        </div>
++        <button className="btn btn-secondary" type="submit"
++          disabled={busy || !online || !capabilities?.enabled || !capabilities?.settings_enabled || !sensors.length || !ieee}>
++          {t("devices.zigbee.applyCalibration")}
++        </button>
++      </form>
++    </div>
++  );
++}
+--- a/tests/test_zigbee_maintenance.py
++++ b/tests/test_zigbee_maintenance.py
+@@ -0,0 +1,152 @@
++import json
++import os
++import re
++import tempfile
++import unittest
++from pathlib import Path
++from types import SimpleNamespace
++from unittest.mock import patch
++
++from fastapi import HTTPException
++
++from backend.app.zigbee.discovery import Observer, ObserverError
++from backend.app.zigbee.maintenance import (
++    audit_event, enforce_admin_write, execute_audited,
++    maintenance_state, validate_option,
++)
++
++
++class FakeMessage:
++    def __init__(self, topic, data):
++        self.topic = topic
++        self.payload = json.dumps(data).encode()
++
++
++class FakeClient:
++    def __init__(self, observer, response_status="ok", mismatched=False):
++        self.observer = observer
++        self.response_status = response_status
++        self.mismatched = mismatched
++        self.calls = []
++
++    def publish(self, topic, body, qos, retain):
++        self.calls.append((topic, json.loads(body), qos, retain))
++        op = topic.split("/bridge/request/")[-1]
++        transaction = "unknown" if self.mismatched else json.loads(body)["transaction"]
++        self.observer._on_message(self, None, FakeMessage(
++            self.observer.prefix + "/bridge/response/" + op,
++            {"transaction": transaction, "status": self.response_status, "data": {}}
++        ))
++        return SimpleNamespace(rc=0)
++
++
++class TestMaintenance(unittest.TestCase):
++    def setUp(self):
++        self.env = patch.dict(os.environ, {}, clear=True)
++        self.env.start()
++
++    def tearDown(self):
++        self.env.stop()
++
++    def ready_env(self, audit_path):
++        os.environ.update({
++            "EMS_ZIGBEE_MAINTENANCE_ENABLED": "true",
++            "EMS_ZIGBEE_MAINTENANCE_AUDIT_PATH": str(audit_path),
++            "EMS_ZIGBEE_WRITE_ORIGINS": "https://ems.sander.example",
++        })
++
++    def test_locked_by_default(self):
++        self.assertFalse(maintenance_state()["enabled"])
++        with self.assertRaises(HTTPException) as ctx:
++            enforce_admin_write(SimpleNamespace(headers={"origin": "https://ems.sander.example"}))
++        self.assertEqual(ctx.exception.status_code, 503)
++
++    def test_origin_required(self):
++        with tempfile.TemporaryDirectory() as directory:
++            self.ready_env(Path(directory) / "audit.jsonl")
++            for origin in ("", "https://untrusted.invalid"):
++                with self.assertRaises(HTTPException) as ctx:
++                    enforce_admin_write(SimpleNamespace(headers={"origin": origin}))
++                self.assertEqual(ctx.exception.status_code, 403)
++
++    def test_settings_separately_locked(self):
++        with tempfile.TemporaryDirectory() as directory:
++            self.ready_env(Path(directory) / "audit.jsonl")
++            request = SimpleNamespace(headers={"origin": "https://ems.sander.example"})
++            enforce_admin_write(request)
++            with self.assertRaises(HTTPException):
++                enforce_admin_write(request, settings=True)
++
++    def test_calibration_allowlist_and_bounds(self):
++        self.assertEqual(validate_option("temperature_calibration", 3), 3.0)
++        self.assertEqual(validate_option("humidity_calibration", -50), -50.0)
++        for key, value in (("dangerous_topic", 1), ("temperature_calibration", 60),
++                           ("temperature_calibration", float("nan")),
++                           ("temperature_calibration", True)):
++            with self.assertRaises(ValueError):
++                validate_option(key, value)
++
++    def test_transaction_correlated_not_retained(self):
++        observer = Observer({"id": "z1", "mqtt_base_topic": "z2m_z1", "coordinator_host": "192.168.1.5", "coordinator_port": 6638}, "127.0.0.1", 1883)
++        observer.connected = True
++        observer.state = "online"
++        observer.client = FakeClient(observer)
++        response = observer.request("permit_join", {"time": 60}, timeout=0.25)
++        self.assertEqual(response["status"], "ok")
++        self.assertFalse(observer.pending)
++        topic, body, qos, retained = observer.client.calls[0]
++        self.assertEqual(topic, "z2m_z1/bridge/request/permit_join")
++        self.assertEqual(body["time"], 60)
++        self.assertEqual(qos, 1)
++        self.assertFalse(retained)
++
++    def test_ignore_unmatched_response(self):
++        observer = Observer({"id": "z1", "mqtt_base_topic": "z2m_z1", "coordinator_host": "192.168.1.5", "coordinator_port": 6638}, "127.0.0.1", 1883)
++        observer.connected = True
++        observer.state = "online"
++        observer.client = FakeClient(observer, mismatched=True)
++        with self.assertRaises(ObserverError):
++            observer.request("permit_join", {"time": 60}, timeout=0.03)
++        self.assertFalse(observer.pending)
++
++    def test_audit_written_before_command(self):
++        with tempfile.TemporaryDirectory() as directory:
++            path = Path(directory) / "audit.jsonl"
++            self.ready_env(path)
++            class ObserverWithAuditCheck:
++                def request(self, operation, payload):
++                    entries = [json.loads(row) for row in path.read_text().splitlines()]
++                    assert entries[0]["status"] == "requested"
++                    assert entries[0]["user"] == "valen"
++                    return {"status": "ok"}
++            res = execute_audited(ObserverWithAuditCheck(), "valen", "gateway_a", "pair_60s",
++                                  {"seconds": 60}, "permit_join", {"time": 60})
++            entries = [json.loads(row) for row in path.read_text().splitlines()]
++            self.assertEqual([r["status"] for r in entries], ["requested", "acknowledged"])
++            self.assertEqual(entries[0]["event_id"], entries[1]["event_id"])
++            self.assertTrue(res["accepted"])
++
++    def test_missing_audit_prevents_publish(self):
++        class NoPublish:
++            def request(self, operation, payload):
++                raise AssertionError("Must not publish")
++        with self.assertRaises(HTTPException) as ctx:
++            execute_audited(NoPublish(), "valen", "gw", "pair_60s", {}, "permit_join", {"time": 60})
++        self.assertEqual(ctx.exception.status_code, 503)
++
++    def test_failed_response_audited(self):
++        with tempfile.TemporaryDirectory() as directory:
++            path = Path(directory) / "audit.jsonl"
++            self.ready_env(path)
++            class Rejected:
++                def request(self, operation, payload):
++                    return {"status": "error"}
++            with self.assertRaises(HTTPException) as ctx:
++                execute_audited(Rejected(), "valen", "gw", "sensor_option", {}, "device/options", {})
++            self.assertEqual(ctx.exception.status_code, 502)
++            statuses = [json.loads(row)["status"] for row in path.read_text().splitlines()]
++            self.assertEqual(statuses, ["requested", "rejected"])
++
++
++if __name__ == "__main__":
++    unittest.main()

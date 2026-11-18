@@ -1,10 +1,15 @@
-version: 4
+# Review-only excerpt. Do NOT replace an existing paired Zigbee2MQTT configuration
+# or regenerate channel, network_key, pan_id, ext_pan_id or device database.
+# Use the existing data directory and back up its contents before editing.
+# Pilot SLZB-06MU radio 7.3.1.0 (EZSP v12) works with ezsp, not ember.
+# Production IP is a proposal and must be approved by IT.
+version: 5
 mqtt:
   server: mqtt://127.0.0.1:1883
   base_topic: zigbee2mqtt
 serial:
-  port: tcp://COORDINATOR_IP:6638
-  adapter: ember
+  port: tcp://192.168.35.11:6638
+  adapter: ezsp
 advanced:
   last_seen: ISO_8601
 frontend:
@@ -13,3 +18,5 @@ frontend:
   port: 8080
 availability:
   enabled: true
+  passive:
+    timeout: 15

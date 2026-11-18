@@ -1,15 +1,16 @@
-<!-- WinSW template; path and command must match approved, built Zigbee2MQTT release. -->
+<!-- Windows WinSW template only. IT approves credentials, data folder and executable. -->
 <service>
   <id>SanderZigbee2MQTT</id>
   <name>Sander Zigbee2MQTT</name>
-  <description>Ethernet Zigbee coordinator gateway to local MQTT.</description>
+  <description>Persistent Ethernet Zigbee coordinator MQTT gateway.</description>
   <executable>C:\Program Files\nodejs\node.exe</executable>
-  <arguments>index.js</arguments>
+  <arguments>C:\Sander\zigbee2mqtt\node_modules\zigbee2mqtt\index.js</arguments>
   <workingdirectory>C:\Sander\zigbee2mqtt</workingdirectory>
   <env name="ZIGBEE2MQTT_DATA" value="C:\Sander\Config\zigbee2mqtt"/>
   <depend>mosquitto</depend>
   <startmode>Automatic</startmode>
-  <onfailure action="restart" delay="10 sec"/>
+  <stoptimeout>30 sec</stoptimeout>
+  <onfailure action="restart" delay="30 sec"/>
   <logpath>C:\Sander\Logs\Zigbee2MQTT</logpath>
   <log mode="roll"/>
 </service>
