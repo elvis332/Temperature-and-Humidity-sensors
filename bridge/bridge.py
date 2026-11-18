@@ -26,6 +26,25 @@ class Cache:
         self.lock = threading.Lock()
         self.connected = False
 
+    def reconfigure(self, sensors):
+        """Hot-load approved new sensor assignments, without erasing existing live identities."""
+        updated = Cache(sensors)  # validates IDs, topics and timeouts
+        with self.lock:
+            for unit, old in self.sensors.items():
+                if unit in updated.sensors and old["topic"] != updated.sensors[unit]["topic"]:
+                    raise ValueError(f"Unit {unit} identity changed; refuse silent mapping rewrite")
+            for topic, unit in self.topics.items():
+                if topic in updated.topics and unit != updated.topics[topic]:
+                    raise ValueError(f"Topic {topic} unit changed; refuse historical series corruption")
+            old_topics = set(self.topics)
+            self.sensors = updated.sensors
+            self.topics = updated.topics
+            for unit in list(self.values):
+                if unit not in self.sensors:
+                    self.values.pop(unit, None)
+                    self.seen.pop(unit, None)
+            return old_topics, set(self.topics)
+
     def connection(self, online):
         with self.lock:
             self.connected = online
@@ -34,7 +53,8 @@ class Cache:
                 self.seen.clear()
 
     def update(self, topic, payload, retained=False):
-        unit = self.topics.get(topic)
+        with self.lock:
+            unit = self.topics.get(topic)
         if unit is None or retained:
             return
         obj = json.loads(payload)
@@ -122,10 +142,44 @@ class Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
 
+def watch_approved_registry(path, original, cache, client, interval, stop):
+    """Watch an IT-managed JSON bridge config; never modify MQTT/Modbus endpoints.
+
+    Only already-approved sensor registrations may be added by updating the protected
+    config file atomically. Existing device/topic/unit mappings cannot be silently
+    rewritten. This watcher neither writes EMS SQL nor pairs Zigbee devices.
+    """
+    source = Path(path)
+    latest = source.stat().st_mtime_ns
+    while not stop.wait(interval):
+        try:
+            changed = source.stat().st_mtime_ns
+            if changed == latest:
+                continue
+            update = json.loads(source.read_text(encoding="utf-8"))
+            for key in ("mqtt_host", "mqtt_port", "mqtt_auth_file", "client_id",
+                        "modbus_host", "modbus_port"):
+                if update.get(key) != original.get(key):
+                    raise ValueError(f"Protected endpoint {key} cannot hot-change")
+            old_topics, new_topics = cache.reconfigure(update["sensors"])
+            for topic in sorted(new_topics - old_topics):
+                client.subscribe(topic, qos=1)
+            for topic in sorted(old_topics - new_topics):
+                client.unsubscribe(topic)
+            latest = changed
+            logging.info("Approved sensor registry reloaded; units=%s", len(cache.sensors))
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            logging.error("Rejected changed bridge registry: %s", exc)
+
+
 def main():
     import paho.mqtt.client as mqtt
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    cfg = json.loads(Path(os.getenv("BRIDGE_CONFIG", "bridge/config.test.json")).read_text(encoding="utf-8"))
+    config_path = Path(os.getenv("BRIDGE_CONFIG", "bridge/config.test.json"))
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    refresh = cfg.get("auto_reload_seconds", 0)
+    if type(refresh) is not int or (refresh and not 5 <= refresh <= 600):
+        raise ValueError("auto_reload_seconds must be 0 (disabled) or 5–600")
     cache = Cache(cfg["sensors"])
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=cfg["client_id"])
     if cfg.get("mqtt_auth_file"):
@@ -152,12 +206,24 @@ def main():
     client.on_connect, client.on_disconnect, client.on_message = connected, disconnected, message
     client.connect_async(cfg["mqtt_host"], cfg["mqtt_port"], 30)
     client.loop_start()
+    stop = threading.Event()
+    watcher = None
+    if refresh:
+        watcher = threading.Thread(
+            target=watch_approved_registry,
+            args=(config_path, cfg, cache, client, refresh, stop),
+            daemon=True, name="approved-bridge-registry"
+        )
+        watcher.start()
     try:
         with Server((cfg["modbus_host"], cfg["modbus_port"]), Handler) as server:
             server.cache = cache
             logging.info("Read-only FC03 bridge listening on %s", server.server_address)
             server.serve_forever()
     finally:
+        stop.set()
+        if watcher:
+            watcher.join(timeout=5)
         client.disconnect()
         client.loop_stop()
 
