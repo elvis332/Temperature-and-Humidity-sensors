@@ -44,6 +44,10 @@ class ConnectionProposal(BaseModel):
     coordinator_host: str
     coordinator_port: int = Field(ge=1, le=65535)
     coordinator_transport: str = "ethernet_tcp"
+    dhcp: bool = False
+    subnet_mask: str | None = None
+    default_gateway: str | None = None
+    dns_servers: list[str] = Field(default_factory=list, max_length=2)
 
 
 def create_admin_router(
@@ -202,17 +206,32 @@ def create_admin_router(
         try:
             # require concrete private/IT-routable IP, no localhost/public network tricks
             ip = ipaddress.ip_address(payload.coordinator_host)
-            if not ip.is_private or ip.is_loopback or ip.is_multicast or ip.is_unspecified or ip.is_link_local:
+            if ip.version != 4 or not ip.is_private or ip.is_loopback or ip.is_multicast or ip.is_unspecified or ip.is_link_local:
                 raise ValueError("unacceptable")
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail="Approved private coordinator IP required") from exc
+            if payload.subnet_mask:
+                subnet = ipaddress.IPv4Network("0.0.0.0/" + payload.subnet_mask)
+                ipnet = ipaddress.IPv4Network(str(ip) + "/" + str(subnet.prefixlen), strict=False)
+            else:
+                ipnet = None
+            if payload.default_gateway:
+                router_ip = ipaddress.IPv4Address(payload.default_gateway)
+                if ipnet and router_ip not in ipnet:
+                    raise ValueError("Gateway router must be in the selected subnet")
+            for entry in payload.dns_servers:
+                ipaddress.IPv4Address(entry)
+        except (ValueError, ipaddress.AddressValueError, ipaddress.NetmaskValueError) as exc:
+            raise HTTPException(status_code=422, detail="Invalid coordinator IPv4, subnet, router or DNS values") from exc
         _audit("zigbee.network.proposal", principal, gateway=gateway_id)
         return {
             "status": "REVIEW_ONLY_NO_LIVE_NETWORK_CHANGE",
             "current": {"host": gw.gw["coordinator_host"],
                         "port": gw.gw["coordinator_port"]},
             "proposed": {"host": payload.coordinator_host,
-                         "port": payload.coordinator_port},
+                         "port": payload.coordinator_port,
+                         "dhcp": payload.dhcp,
+                         "subnet_mask": payload.subnet_mask,
+                         "default_gateway": payload.default_gateway,
+                         "dns_servers": payload.dns_servers},
             "warning": "IT must approve SLZB-OS network change, server routing, backup and Z2M serial.port update before cutover."
         }
 
