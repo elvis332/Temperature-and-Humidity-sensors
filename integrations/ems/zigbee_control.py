@@ -289,6 +289,7 @@ class ZigbeeFleet:
                  client_factory=None, broker="127.0.0.1"):
         validate(manifest)
         self.manifest = deepcopy(manifest)
+        self.registration_lock = threading.RLock()
         self.gateways = {
             gw["id"]: ZigbeeGateway(gw, credentials_file=(credentials or {}).get(gw["id"]),
                                     client_factory=client_factory, broker=broker)
@@ -319,7 +320,8 @@ class ZigbeeFleet:
         model = (discovered.get("definition") or {}).get("model") or discovered.get("model_id")
         if model != "SNZB-02D":
             raise InvalidRequest("Only the validated SNZB-02D model is supported by the current telemetry profile")
-        existing = self.manifest["sensors"]
+        with self.registration_lock:
+            existing = deepcopy(self.manifest["sensors"])
         if any(s["device_id"] == device_id for s in existing):
             raise InvalidRequest("EMS device ID already registered")
         if any(s["ieee_address"].lower() == ieee_address.lower() for s in existing):
@@ -350,3 +352,13 @@ class ZigbeeFleet:
             "next_site_manifest": proposal,
             "warning": "Requires approved EMS Devices API registration, configuration rollout, and audit. No SQL writes made."
         }
+
+    def apply_committed_plan(self, plan):
+        """Only call after the REAL EMS adapter committed SQL and bridge mapping."""
+        from deploy.reconcile_site import review
+        proposal = plan["next_site_manifest"]
+        with self.registration_lock:
+            result = review(self.manifest, proposal)
+            if result["blockers"] or len(result["added"]) != 1:
+                raise InvalidRequest("Committed site manifest conflicts with existing EMS identities")
+            self.manifest = deepcopy(proposal)
