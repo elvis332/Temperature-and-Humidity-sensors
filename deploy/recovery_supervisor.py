@@ -26,6 +26,8 @@ LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 def load_config(path):
     config = json.loads(Path(path).read_text(encoding="utf-8"))
+    if config.get("coordinator_transport", "ethernet_tcp") != "ethernet_tcp":
+        raise ValueError("Unsupported coordinator transport; SLZB-06MU server connection is Zigbee-to-Ethernet TCP, not RS-485")
     for key in ("mqtt_host", "z2m_host", "bridge_host"):
         if config[key] not in LOOPBACK:
             raise ValueError(f"{key} must be loopback for the one-server deployment")
