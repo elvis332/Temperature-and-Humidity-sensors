@@ -1,0 +1,7 @@
+  "devices.category.zigbee": { en: "Zigbee Sensors", zh: "Zigbee 感測器" },
+  "devices.zigbee.eyebrow": { en: "DEVICE MANAGEMENT", zh: "設備管理" },
+  "devices.zigbee.title": { en: "Zigbee Gateways & Sensors", zh: "Zigbee 閘道器與感測器" },
+  "devices.zigbee.phase1Note": {
+    en: "Section ready for staging review. Gateway discovery, pairing, registration and advanced maintenance will be connected in later approved updates. No live Zigbee devices are changed in this step.",
+    zh: "此區塊已備妥供測試環境審查。閘道器搜尋、配對、註冊及進階維護將於後續核准的更新中逐步整合。本階段不會變更任何現場 Zigbee 設備。",
+  },
