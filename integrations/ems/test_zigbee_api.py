@@ -38,7 +38,8 @@ class EMSAdminApiTests(unittest.TestCase):
         app = FastAPI()
         app.include_router(create_admin_router(
             self.fleet, require_ems_admin=require_admin,
-            audit_change=lambda record: self.audits.append(record)
+            audit_change=lambda record: self.audits.append(record),
+            pairing_writes_enabled=True, device_settings_writes_enabled=True,
         ), prefix="/api")
         self.client = TestClient(app)
         self.headers = {"x-test-ems-admin": "allowed"}
@@ -66,6 +67,59 @@ class EMSAdminApiTests(unittest.TestCase):
                                           "device_id":"TH-02", "location":"2F"})
         self.assertEqual(response.status_code, 501)
         self.assertFalse(self.audits)
+
+    def test_default_off_pairing_and_sensor_writes_fail_closed(self):
+        # Staging routers must never emit management MQTT writes unless Valen/IT
+        # explicitly opts in. Read-only discovery and plans remain usable.
+        app = FastAPI()
+        def require_admin(request: Request):
+            if request.headers.get("x-test-ems-admin") != "allowed":
+                raise HTTPException(status_code=403)
+            return {"id": "approved-admin"}
+        app.include_router(create_admin_router(
+            self.fleet, require_ems_admin=require_admin,
+            audit_change=lambda record: self.audits.append(record)
+        ), prefix="/api")
+        gw = self.fleet.gateway("GW01")
+        count = len(gw._client.messages)
+        prefix = "/api/admin/zigbee"
+        with TestClient(app) as client:
+            self.assertEqual(client.get(prefix + "/gateways", headers=self.headers).status_code, 200)
+            caps = client.get(prefix + "/capabilities", headers=self.headers).json()
+            self.assertFalse(caps["pairing_writes_enabled"])
+            self.assertFalse(caps["device_settings_writes_enabled"])
+            for url, body in (
+                (prefix + "/gateways/GW01/permit-join", {"seconds": 60}),
+                (prefix + "/gateways/GW01/permit-join", {"seconds": 0}),
+                (prefix + "/gateways/GW01/devices/" + IEEE + "/expose",
+                 {"setting": "comfort_temperature_max", "value": 27}),
+                (prefix + "/gateways/GW01/devices/" + IEEE + "/option",
+                 {"option": "debounce", "value": 2}),
+            ):
+                self.assertEqual(client.post(url, headers=self.headers, json=body).status_code, 423)
+            self.assertEqual(client.post(prefix + "/gateways/GW01/permit-join",
+                             json={"seconds": 60}).status_code, 403)
+        self.assertEqual(len(gw._client.messages), count)
+        self.assertFalse(self.audits)
+
+    def test_independently_approved_pairing_keeps_device_settings_locked(self):
+        app = FastAPI()
+        app.include_router(create_admin_router(
+            self.fleet,
+            require_ems_admin=lambda: {"id": "admin"},
+            audit_change=lambda record: self.audits.append(record),
+            pairing_writes_enabled=True,
+        ), prefix="/api")
+        with TestClient(app) as client:
+            caps = client.get("/api/admin/zigbee/capabilities").json()
+            self.assertTrue(caps["pairing_writes_enabled"])
+            self.assertFalse(caps["device_settings_writes_enabled"])
+            self.assertEqual(client.post("/api/admin/zigbee/gateways/GW01/permit-join",
+                                        json={"seconds": 30}).status_code, 200)
+            self.assertEqual(client.post(
+                "/api/admin/zigbee/gateways/GW01/devices/" + IEEE + "/expose",
+                json={"setting": "comfort_temperature_max", "value": 27}
+            ).status_code, 423)
 
     def test_bounded_join_and_admin_audit(self):
         response = self.client.post("/api/admin/zigbee/gateways/GW01/permit-join",
@@ -137,7 +191,7 @@ class EMSAdminApiTests(unittest.TestCase):
         app = FastAPI()
         app.include_router(create_admin_router(
             self.fleet, require_ems_admin=admin,
-            audit_change=unsupported_async_audit), prefix="/api")
+            audit_change=unsupported_async_audit, pairing_writes_enabled=True), prefix="/api")
         with TestClient(app) as client:
             response = client.post("/api/admin/zigbee/gateways/GW01/permit-join",
                                    json={"seconds":60})
@@ -153,7 +207,7 @@ class EMSAdminApiTests(unittest.TestCase):
             raise RuntimeError("audit storage unavailable")
         app = FastAPI()
         app.include_router(create_admin_router(self.fleet, require_ems_admin=admin,
-                                                audit_change=bad_audit), prefix="/api")
+                                                audit_change=bad_audit, pairing_writes_enabled=True), prefix="/api")
         with TestClient(app) as client:
             result = client.post("/api/admin/zigbee/gateways/GW01/permit-join",
                                  json={"seconds": 60})
