@@ -194,7 +194,8 @@ def main():
     def connected(c, _, flags, reason, properties):
         cache.connection(not reason.is_failure)
         if not reason.is_failure:
-            c.subscribe([(topic, 1) for topic in cache.topics])
+            if cache.topics:
+                c.subscribe([(topic, 1) for topic in cache.topics])
             logging.info("MQTT connected; monitoring %s", list(cache.topics))
     def disconnected(c, _, flags, reason, properties):
         cache.connection(False)
