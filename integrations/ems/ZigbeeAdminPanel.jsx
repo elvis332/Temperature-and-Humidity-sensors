@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 /** Sander EMS -> Devices -> Zigbee. Mount only behind the current EMS admin role.
  * Credentials and native Zigbee2MQTT ports are never exposed to the browser.
  */
-export default function ZigbeeAdminPanel({ basePath="/api/admin/zigbee" }) {
+export default function ZigbeeAdminPanel({ basePath="/api/admin/zigbee", csrfToken }) {
   const [gateways, setGateways] = useState([]);
   const [gatewayId, setGatewayId] = useState("");
   const [devices, setDevices] = useState([]);
@@ -23,13 +23,13 @@ export default function ZigbeeAdminPanel({ basePath="/api/admin/zigbee" }) {
   const call = useCallback(async (path, options={}) => {
     const res = await fetch(basePath + path, {
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      headers: { "Content-Type": "application/json", ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}), ...(options.headers || {}) },
       ...options,
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : "EMS API " + res.status);
     return body;
-  }, [basePath]);
+  }, [basePath, csrfToken]);
 
   const refresh = useCallback(async () => {
     try {
