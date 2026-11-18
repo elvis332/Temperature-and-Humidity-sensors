@@ -45,10 +45,14 @@ Integration pseudocode (must be adapted to the CURRENT EMS router and actual adm
         audit_change=existing_ems_audit_write,
         register_transaction=None,
         native_proxy_paths={},
+        pairing_writes_enabled=False,         # REQUIRED default: no join commands
+        device_settings_writes_enabled=False, # REQUIRED default: no sensor writes
     )
     existing_api_router.include_router(router)
 
 The router prefix is /admin/zigbee; if the EMS app's API router uses /api, full URL becomes /api/admin/zigbee. No independent login or bypass routes are introduced. For cookie-based EMS auth, enforce the same existing CSRF protections on all management POSTs; the React component accepts a csrfToken prop. Never disable CSRF to make it work.
+
+**Step 4 write approval gates (added 2026-11-18):** Pairing and sensor settings are independently **disabled by default** even for authenticated administrators. The `/capabilities` response exposes `pairing_writes_enabled` and `device_settings_writes_enabled` so the Devices UI disables unavailable buttons. The backend returns HTTP 423 and performs **no MQTT publish or change audit** when a disabled action is requested. Administrator checks still apply to all requests. Valen/IT may explicitly set each flag to `True` only in the reviewed EMS staging/server configuration after change approval, existing EMS auth/CSRF/audit integration, and device tests. Do not enable both just for convenience. Read-only discovery, registration planning and reviewed network proposals remain available.
 
 Backend API operations already implemented:
 - GET /gateways : live MQTT and Zigbee2MQTT status, coordinator network endpoint, counts
