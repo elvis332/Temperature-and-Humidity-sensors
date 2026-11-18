@@ -1,0 +1,11 @@
+      {deviceSection === "zigbee" ? (
+        <section className="panel" aria-label={t("devices.zigbee.title")}>
+          <div className="devices-head">
+            <div>
+              <p className="eyebrow">{t("devices.zigbee.eyebrow")}</p>
+              <h3>{t("devices.zigbee.title")}</h3>
+            </div>
+          </div>
+          <p className="device-note">{t("devices.zigbee.phase1Note")}</p>
+        </section>
+      ) : deviceSection === "lighting" ? (
