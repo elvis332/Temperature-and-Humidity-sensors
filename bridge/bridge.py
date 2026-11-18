@@ -31,7 +31,9 @@ class Cache:
         updated = Cache(sensors)  # validates IDs, topics and timeouts
         with self.lock:
             for unit, old in self.sensors.items():
-                if unit in updated.sensors and old["topic"] != updated.sensors[unit]["topic"]:
+                if unit not in updated.sensors:
+                    raise ValueError(f"Unit {unit} was removed; retirement requires a reviewed change")
+                if old["topic"] != updated.sensors[unit]["topic"]:
                     raise ValueError(f"Unit {unit} identity changed; refuse silent mapping rewrite")
             for topic, unit in self.topics.items():
                 if topic in updated.topics and unit != updated.topics[topic]:
