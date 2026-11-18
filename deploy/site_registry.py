@@ -151,6 +151,7 @@ def build(manifest, root=r"C:\Sander"):
             "mqtt_auth_file": str(rootw / "Config" / ("mqtt-bridge-" + gid + ".auth.json")),
             "client_id": f"sander-bridge-{gid}",
             "modbus_host": "127.0.0.1", "modbus_port": gw["modbus_port"],
+            "auto_reload_seconds": 10,
             "sensors": mqtt_sensors
         }
         recovery = {
