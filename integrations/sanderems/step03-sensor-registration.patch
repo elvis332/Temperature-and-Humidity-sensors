@@ -1,0 +1,327 @@
+--- a/frontend/src/pages/ZigbeeDiscoveryPanel.jsx
++++ b/frontend/src/pages/ZigbeeDiscoveryPanel.jsx
+@@ -1,21 +1,61 @@
+ import { useCallback, useEffect, useState } from "react";
+ import { RefreshCw } from "lucide-react";
+ 
+-import { getZigbeeDiscovery } from "../api";
++import { createAdminDevice, getAdminDevices, getAdminProfiles, getZigbeeDiscovery } from "../api";
+ import { useI18n } from "../i18n";
+ 
+-// Read-only inventory for the existing Devices page; server controls availability.
++const SUPPORTED_MODEL = "SNZB-02D";
++const IEEE_PATTERN = /^0x[0-9a-f]{16}$/i;
++
++// Keep the physical IEEE identity stable even when a sensor moves between gateways.
++function sensorId(ieee) {
++  return IEEE_PATTERN.test(ieee || "") ? `ZB_${ieee.slice(2).toUpperCase()}` : null;
++}
++
++function isValidIPv4(value) {
++  const parts = value.split(".");
++  return parts.length === 4 && parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
++}
++
++function newDraft(gatewayId, sensor) {
++  return {
++    gatewayId,
++    ieee: sensor.ieee_address,
++    deviceId: sensorId(sensor.ieee_address),
++    name: (sensor.friendly_name || "SNZB-02D").slice(0, 255),
++    building: "",
++    floor: "",
++    location: "",
++    ip: "",
++    port: "",
++    unit: "",
++    confirmed: false,
++  };
++}
++
++// Registration reuses Valen's existing administrator-only Devices API and audit history.
++// There is no Zigbee write, new database table or automatic collection here.
+ export default function ZigbeeDiscoveryPanel() {
+   const { t } = useI18n();
+   const [snapshot, setSnapshot] = useState(null);
++  const [registered, setRegistered] = useState([]);
++  const [hasProfile, setHasProfile] = useState(false);
+   const [busy, setBusy] = useState(false);
++  const [saving, setSaving] = useState(false);
+   const [error, setError] = useState("");
++  const [notice, setNotice] = useState("");
++  const [draft, setDraft] = useState(null);
+ 
+   const refresh = useCallback(async () => {
+     setBusy(true);
+     setError("");
+     try {
+-      setSnapshot(await getZigbeeDiscovery());
++      const [inventory, devices, profiles] = await Promise.all([
++        getZigbeeDiscovery(), getAdminDevices(), getAdminProfiles(),
++      ]);
++      setSnapshot(inventory);
++      setRegistered(devices);
++      setHasProfile(profiles.some((p) => p.id === "SNZB02D"));
+     } catch (problem) {
+       setSnapshot(null);
+       setError(problem instanceof Error ? problem.message : String(problem));
+@@ -26,18 +66,83 @@
+ 
+   useEffect(() => { refresh(); }, [refresh]);
+ 
++  function change(field, value) {
++    setDraft((current) => current ? { ...current, [field]: value } : current);
++  }
++
++  async function register(event) {
++    event.preventDefault();
++    if (!draft || saving || !hasProfile) return;
++    setError("");
++    setNotice("");
++    const id = sensorId(draft.ieee);
++    if (!id || id !== draft.deviceId || !draft.confirmed || !draft.floor.trim() ||
++        !draft.location.trim() || !draft.name.trim() || !isValidIPv4(draft.ip.trim()) ||
++        !Number.isInteger(Number(draft.port)) || Number(draft.port) < 1 || Number(draft.port) > 65535 ||
++        !Number.isInteger(Number(draft.unit)) || Number(draft.unit) < 1 || Number(draft.unit) > 247) {
++      setError(t("devices.zigbee.registrationInvalid"));
++      return;
++    }
++    setSaving(true);
++    try {
++      // Recheck on submission: a second administrator may have registered in the meantime.
++      const latest = await getAdminDevices();
++      if (latest.some((d) => d.device_id.toUpperCase() === id.toUpperCase())) {
++        throw new Error(t("devices.zigbee.alreadyRegistered"));
++      }
++      if (latest.some((d) => d.ip_address === draft.ip.trim() &&
++          Number(d.port) === Number(draft.port) && Number(d.modbus_unit_id) === Number(draft.unit))) {
++        throw new Error(t("devices.zigbee.endpointTaken"));
++      }
++      await createAdminDevice({
++        device_id: id,
++        profile_id: "SNZB02D",
++        display_name: draft.name.trim(),
++        description: `Zigbee2MQTT gateway ${draft.gatewayId}; IEEE ${draft.ieee.toLowerCase()}`,
++        status: "commissioning",
++        parent_panel: null,
++        role: "to_confirm",
++        parent_meter_id: null,
++        location: {
++          building: draft.building.trim() || null,
++          floor: draft.floor.trim(),
++          electrical_panel: null,
++          system_group: draft.location.trim(),
++        },
++        electrical: { ct_primary_a: null, ct_secondary_a: null, pt_primary_v: null, pt_secondary_v: null },
++        communication: {
++          ip_address: draft.ip.trim(),
++          port: Number(draft.port),
++          modbus_unit_id: Number(draft.unit),
++        },
++        collection: { enabled: false, sampling_seconds: 60, timeout_seconds: 5, retry_count: 3 },
++        points: {},
++      });
++      setDraft(null);
++      setRegistered(await getAdminDevices());
++      setNotice(t("devices.zigbee.registrationSaved", { id }));
++    } catch (problem) {
++      setError(problem instanceof Error ? problem.message : String(problem));
++    } finally {
++      setSaving(false);
++    }
++  }
++
+   return (
+     <div className="devices-zigbee-discovery">
+       <div className="devices-actions">
+-        <button className="btn btn-secondary" type="button" onClick={refresh} disabled={busy}>
++        <button className="btn btn-secondary" type="button" onClick={refresh} disabled={busy || saving}>
+           <RefreshCw size={16} /> {t("devices.zigbee.refresh")}
+         </button>
+       </div>
+       {busy && <p className="device-note" role="status">{t("devices.zigbee.loading")}</p>}
+       {error && <p className="device-note" role="alert">{t("devices.zigbee.error", { reason: error })}</p>}
++      {notice && <p className="device-note" role="status">{notice}</p>}
+       {snapshot && !snapshot.enabled && <p className="device-note">{t("devices.zigbee.disabled")}</p>}
+       {snapshot?.enabled && snapshot.gateways.length === 0 &&
+         <p className="device-note">{t("devices.zigbee.noGateways")}</p>}
++      {snapshot?.enabled && !hasProfile &&
++        <p className="device-note" role="alert">{t("devices.zigbee.profileMissing")}</p>}
+       {snapshot?.enabled && snapshot.gateways.map((gateway) => (
+         <section key={gateway.gateway_id} className="panel" aria-label={gateway.gateway_id}>
+           <h4>{gateway.gateway_id}</h4>
+@@ -55,16 +160,60 @@
+                   <th>{t("devices.col.id")}</th>
+                   <th>{t("devices.zigbee.model")}</th>
+                   <th>{t("devices.zigbee.ieee")}</th>
++                  <th>{t("devices.zigbee.action")}</th>
+                 </tr></thead>
+-                <tbody>{gateway.devices.map((sensor) => (
+-                  <tr key={sensor.ieee_address}>
+-                    <td>{sensor.friendly_name || "—"}</td>
+-                    <td>{sensor.model || "—"}</td>
+-                    <td>{sensor.ieee_address}</td>
+-                  </tr>
+-                ))}</tbody>
++                <tbody>{gateway.devices.map((sensor) => {
++                  const id = sensorId(sensor.ieee_address);
++                  const known = id && registered.some((d) => d.device_id.toUpperCase() === id.toUpperCase());
++                  const supported = sensor.model === SUPPORTED_MODEL && Boolean(id);
++                  return (
++                    <tr key={sensor.ieee_address}>
++                      <td>{sensor.friendly_name || "—"}</td>
++                      <td>{sensor.model || "—"}</td>
++                      <td>{sensor.ieee_address}</td>
++                      <td>{known ? t("devices.zigbee.registered") : supported ? (
++                        <button className="btn btn-secondary" type="button"
++                          disabled={!hasProfile || busy || saving || !gateway.mqtt_connected || gateway.zigbee2mqtt_state !== "online"}
++                          onClick={() => { setDraft(newDraft(gateway.gateway_id, sensor)); setError(""); setNotice(""); }}>
++                          {t("devices.zigbee.register")}
++                        </button>
++                      ) : t("devices.zigbee.unsupported")}</td>
++                    </tr>
++                  );
++                })}</tbody>
+               </table>
+             </div>
++          )}
++          {draft?.gatewayId === gateway.gateway_id && (
++            <form onSubmit={register} className="panel">
++              <h4>{t("devices.zigbee.registrationTitle")}</h4>
++              <p className="device-note">{t("devices.zigbee.registrationNotice")}</p>
++              <div className="device-grid">
++                <label className="device-field"><span>{t("devices.field.deviceId")}</span>
++                  <input value={draft.deviceId} readOnly /></label>
++                <label className="device-field"><span>{t("devices.field.name")}</span>
++                  <input value={draft.name} maxLength={255} required onChange={(e) => change("name", e.target.value)} /></label>
++                <label className="device-field"><span>{t("devices.field.building")}</span>
++                  <input value={draft.building} maxLength={100} onChange={(e) => change("building", e.target.value)} /></label>
++                <label className="device-field"><span>{t("devices.field.floor")}</span>
++                  <input value={draft.floor} maxLength={100} required onChange={(e) => change("floor", e.target.value)} /></label>
++                <label className="device-field"><span>{t("devices.zigbee.location")}</span>
++                  <input value={draft.location} maxLength={100} required onChange={(e) => change("location", e.target.value)} /></label>
++                <label className="device-field"><span>{t("devices.zigbee.bridgeIp")}</span>
++                  <input value={draft.ip} required placeholder="192.168.x.x" onChange={(e) => change("ip", e.target.value)} /></label>
++                <label className="device-field"><span>{t("devices.zigbee.bridgePort")}</span>
++                  <input type="number" min="1" max="65535" required value={draft.port} onChange={(e) => change("port", e.target.value)} /></label>
++                <label className="device-field"><span>{t("devices.zigbee.bridgeUnit")}</span>
++                  <input type="number" min="1" max="247" required value={draft.unit} onChange={(e) => change("unit", e.target.value)} /></label>
++              </div>
++              <label className="device-field">
++                <span><input type="checkbox" checked={draft.confirmed} onChange={(e) => change("confirmed", e.target.checked)} /> {t("devices.zigbee.verifyBridge")}</span>
++              </label>
++              <div className="devices-actions">
++                <button className="btn btn-secondary" type="button" onClick={() => setDraft(null)} disabled={saving}>{t("common.cancel")}</button>
++                <button className="btn btn-primary" type="submit" disabled={saving || !draft.confirmed || !hasProfile}>{saving ? t("common.saving") : t("devices.zigbee.saveRegistration")}</button>
++              </div>
++            </form>
+           )}
+         </section>
+       ))}
+--- a/frontend/src/messages.js
++++ b/frontend/src/messages.js
+@@ -30,8 +30,35 @@
+   "devices.zigbee.model": { en: "Model", zh: "型號" },
+   "devices.zigbee.ieee": { en: "IEEE address", zh: "IEEE 位址" },
+   "devices.zigbee.snapshotNote": {
+-    en: "Read-only Zigbee2MQTT inventory. A discovered sensor is not proof of live measurements; no pairing, configuration, or registration is performed here.",
+-    zh: "此為唯讀 Zigbee2MQTT 設備清單。搜尋到感測器不代表已有即時量測資料；此頁不執行配對、設定或註冊。",
++    en: "Zigbee2MQTT inventory is read-only. Registration creates a commissioning record only after manual review; it does not pair sensors, change gateway configuration or enable collection.",
++    zh: "Zigbee2MQTT 設備清單為唯讀。註冊功能僅在人工確認後建立待驗收紀錄；不會配對感測器、修改閘道器設定或啟用採集。",
++  },
++  // Step 03: Manual, audited SNZB-02D registration with collection disabled
++  "devices.zigbee.action": { en: "Registration", zh: "註冊" },
++  "devices.zigbee.register": { en: "Register sensor", zh: "註冊感測器" },
++  "devices.zigbee.registered": { en: "Already registered", zh: "已註冊" },
++  "devices.zigbee.unsupported": { en: "Model not supported", zh: "暫不支援此型號" },
++  "devices.zigbee.profileMissing": { en: "SNZB-02D profile is not installed; registration is unavailable.", zh: "尚未安裝 SNZB-02D 設備設定檔，無法進行註冊。" },
++  "devices.zigbee.registrationTitle": { en: "Review sensor registration", zh: "檢查感測器註冊資料" },
++  "devices.zigbee.registrationNotice": {
++    en: "Confirm the physical location and IT-assigned Modbus TCP bridge endpoint. This is NOT the Zigbee coordinator address. The new device will be saved as commissioning with collection OFF; no pairing or live equipment control occurs.",
++    zh: "請確認實際安裝位置及 IT 指定的 Modbus TCP 橋接端點。此位址並非 Zigbee 協調器位址。新設備將以待驗收狀態儲存，且資料採集維持關閉；不會進行配對或控制現場設備。",
++  },
++  "devices.zigbee.location": { en: "Physical location / system group", zh: "實際位置／系統群組" },
++  "devices.zigbee.bridgeIp": { en: "Modbus bridge IP (not coordinator IP)", zh: "Modbus 橋接器 IP（非協調器 IP）" },
++  "devices.zigbee.bridgePort": { en: "Modbus bridge TCP port", zh: "Modbus 橋接器 TCP 埠" },
++  "devices.zigbee.bridgeUnit": { en: "Assigned Modbus unit ID", zh: "指定的 Modbus 單元 ID" },
++  "devices.zigbee.verifyBridge": {
++    en: "I have verified the sensor identity and bridge IP/port/unit assignment with IT.",
++    zh: "我已與 IT 確認感測器身分，以及橋接器的 IP／埠／單元 ID 配置。",
++  },
++  "devices.zigbee.saveRegistration": { en: "Save registration (collection off)", zh: "儲存註冊（關閉採集）" },
++  "devices.zigbee.registrationInvalid": { en: "Enter a valid name, floor, location, IPv4 bridge address, TCP port (1–65535) and unit ID (1–247), then confirm IT verification.", zh: "請填入有效名稱、樓層、位置、IPv4 橋接位址、TCP 埠（1–65535）及單元 ID（1–247），並確認 IT 已驗證。" },
++  "devices.zigbee.alreadyRegistered": { en: "This IEEE sensor has already been registered under its assigned EMS ID.", zh: "此 IEEE 感測器已使用指定的 EMS ID 註冊。" },
++  "devices.zigbee.endpointTaken": { en: "This bridge IP, port and unit ID are already used by another EMS device.", zh: "此橋接器 IP、埠與單元 ID 已由另一個 EMS 設備使用。" },
++  "devices.zigbee.registrationSaved": {
++    en: "{id} registered in commissioning with collection OFF. Enable collection only after bridge and readings are verified.",
++    zh: "{id} 已以待驗收狀態註冊，採集維持關閉。確認橋接器與讀值後方可啟用採集。",
+   },
+   // ----------------------------------------------------------
+   // Shell (App.jsx)
+--- /dev/null
++++ b/config/profiles/SNZB02D.yaml
+@@ -0,0 +1,64 @@
++# SONOFF SNZB-02D reported through the Sander Zigbee2MQTT -> Modbus bridge.
++# Unique sensor IDs, IEEE addresses and Modbus unit assignments are controlled
++# by the gateway site registry and Devices registration workflow.
++profile:
++  id: SNZB02D
++  manufacturer: SONOFF
++  model: SNZB-02D
++  device_type: environment_sensor
++  communication_mode: modbus_tcp
++  description: Zigbee2MQTT environmental sensor read-only Modbus bridge.
++points:
++  - key: temperature_c
++    display_name: Temperature
++    display_name_zh: 溫度
++    short_name: Temp
++    unit: °C
++    data_type: float
++    category: environmental
++    enabled: true
++    required: true
++    writable: false
++    status: confirmed
++    validation: {min: -40, max: 80}
++    source: {simulation: false, register_address: 0, register_type: int16, function_code: 3, scale: 0.1, block_start: 0, block_length: 4}
++  - key: humidity_pct
++    display_name: Relative Humidity
++    display_name_zh: 相對濕度
++    short_name: Humidity
++    unit: '%RH'
++    data_type: float
++    category: environmental
++    enabled: true
++    required: true
++    writable: false
++    status: confirmed
++    validation: {min: 0, max: 100}
++    source: {simulation: false, register_address: 1, register_type: uint16, function_code: 3, scale: 0.1, block_start: 0, block_length: 4}
++  - key: battery_pct
++    display_name: Battery
++    display_name_zh: 電池
++    short_name: Battery
++    unit: '%'
++    data_type: float
++    category: environmental
++    enabled: true
++    required: false
++    writable: false
++    status: confirmed
++    validation: {min: 0, max: 100}
++    alarm: {min: 20}
++    source: {simulation: false, register_address: 2, register_type: uint16, function_code: 3, scale: 1, block_start: 0, block_length: 4}
++  - key: lqi
++    display_name: Link Quality
++    display_name_zh: 訊號品質
++    short_name: LQI
++    unit: ''
++    data_type: float
++    category: diagnostics
++    enabled: true
++    required: false
++    writable: false
++    status: confirmed
++    validation: {min: 0, max: 255}
++    source: {simulation: false, register_address: 3, register_type: uint16, function_code: 3, scale: 1, block_start: 0, block_length: 4}
