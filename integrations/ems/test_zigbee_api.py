@@ -127,6 +127,23 @@ class EMSAdminApiTests(unittest.TestCase):
             create_admin_router(self.fleet, require_ems_admin=admin, audit_change=lambda _: None,
                                 native_proxy_paths={"GW01": "http://192.168.50.20:8080/"})
 
+    def test_async_audit_adapter_is_rejected_without_sending_mqtt(self):
+        gw = self.fleet.gateway("GW01")
+        before = len(gw._client.messages)
+        def admin(request: Request):
+            return {"id": "admin"}
+        async def unsupported_async_audit(event):
+            return None
+        app = FastAPI()
+        app.include_router(create_admin_router(
+            self.fleet, require_ems_admin=admin,
+            audit_change=unsupported_async_audit), prefix="/api")
+        with TestClient(app) as client:
+            response = client.post("/api/admin/zigbee/gateways/GW01/permit-join",
+                                   json={"seconds":60})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(len(gw._client.messages), before)
+
     def test_audit_failure_blocks_mqtt_commands(self):
         gw = self.fleet.gateway("GW01")
         before = len(gw._client.messages)
