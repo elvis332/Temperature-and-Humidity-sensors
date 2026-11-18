@@ -77,6 +77,31 @@ class EMSAdminApiTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/admin/zigbee/gateways/GW01/permit-join",
                            headers=self.headers, json={"seconds": 254}).status_code, 422)
 
+    def test_injected_registration_transaction_commits_once_without_real_sql(self):
+        gw = self.fleet.gateway("GW01")
+        other = "0x0000000000000abc"
+        deliver(gw, "zigbee2mqtt/bridge/devices", [discovered(), discovered(other, "TH-11")])
+        operations = []
+        def admin(request: Request):
+            return {"id": "staging-admin"}
+        def fake_ems_transaction(plan, user):
+            operations.append(plan["sensor"]["device_id"])
+            return {"committed": True, "staging_mock": True}
+        app = FastAPI()
+        app.include_router(create_admin_router(
+            self.fleet, require_ems_admin=admin, audit_change=lambda event: self.audits.append(event),
+            register_transaction=fake_ems_transaction), prefix="/api")
+        body = {"gateway_id": "GW01", "ieee_address": other,
+                "device_id": "TH-11", "location": "2F SMT"}
+        with TestClient(app) as client:
+            result = client.post("/api/admin/zigbee/registration/commit", json=body)
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertTrue(result.json()["committed"])
+            repeated = client.post("/api/admin/zigbee/registration/commit", json=body)
+            self.assertEqual(repeated.status_code, 422)
+        self.assertEqual(operations, ["TH-11"])
+        self.assertEqual(len(self.fleet.manifest["sensors"]), 2)
+
     def test_network_proposal_is_not_an_ip_write(self):
         result = self.client.post("/api/admin/zigbee/gateways/GW01/network/propose",
                                   headers=self.headers,
