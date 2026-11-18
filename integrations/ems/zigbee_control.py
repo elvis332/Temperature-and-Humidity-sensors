@@ -70,7 +70,8 @@ def exposed_names(features: Any) -> set[str]:
         for feature in features:
             found |= exposed_names(feature)
     elif isinstance(features, dict):
-        if isinstance(features.get("name"), str) and (features.get("access", 0) & 2):
+        access = features.get("access")
+        if isinstance(features.get("name"), str) and type(access) is int and (access & 2):
             found.add(features["name"])
         found |= exposed_names(features.get("features", []))
     return found
